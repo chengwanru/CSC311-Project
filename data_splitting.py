@@ -80,10 +80,10 @@ def grouped_kfold_split(df, id_col="unique_id", k=5, random_state=42):
 
 if __name__ == "__main__":
     # Load your specific dataset
-    file_path = "training_data.csv"
+    file_path = "preprocessed.csv"
     try:
         df = pd.read_csv(file_path)
-        print(f"--- Original Dataset Loaded ---")
+        print(f"--- Preprocessed Dataset Loaded ---")
         print(f"Total Rows: {len(df)}")
         print(f"Total Unique Students: {df['unique_id'].nunique()}\n")
         
