@@ -1,0 +1,14 @@
+# virtual environments
+venv/
+.venv/
+.env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# local / generated (optional — remove lines you want tracked)
+# preprocessed_arrays.npz
+# preprocess_state.pkl

@@ -10,6 +10,7 @@ print(data.shape) # Check shape is correct
 # Clean data
 # Remove incomplete rows (with NaN's / Na's)
 cleaned_df = data.dropna(how='any')
+print(cleaned_df.shape) # Check shape is correct
 
 # Separate data into three dataframes sorted by the three paintings
 memory_df = cleaned_df.loc[cleaned_df['Painting'] == 'The Persistence of Memory']
