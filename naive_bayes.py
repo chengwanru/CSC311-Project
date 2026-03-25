@@ -25,20 +25,21 @@ from data_splitting import grouped_kfold_split, regular_split
 # ============================================================
 
 DATA_PATH   = "preprocessed.csv"
-RANDOM_SEED = 42
+RANDOM_SEED = 108
 K_FOLDS     = 5
 USE_KFOLD   = True
 
 # Hyper-parameter search grid
 PARAM_GRID = {
     "vocab_size": [2000],
-    "alpha":      [0.9, 1.0],
+    "alpha":      [0.9],
     "binary_tf":  [True],   # binary presence vs raw TF
     "num_bins":   [None],    # None → Gaussian NB for numerics
-    "blend_weight": [0.8, 0.9, 1.0],
-    "w_likert":      [1.0, 2.0, 3.0],
+    "blend_weight": [0.9, 1.0],
+    "w_likert":      [1.0, 2.0],
     "w_numeric":     [0.5, 1.0],
-    "w_categorical": [0.5, 1.0, 2.0],
+    "w_price":       [0.0, 0.2],  # extra scale on price only (after w_numeric)
+    "w_categorical": [1.0, 2.0],
 }
 
 # ============================================================
@@ -105,13 +106,36 @@ STOP_WORDS = {
     "very","just","would","could","should","there","their","they",
     "when","what","how","all","some","any","can","more","been",
     "also","will","than","then","here","make","feel","feels","made",
+    "makes",
+    # domain stop words — appear in all classes equally
+    "painting","art","picture","artwork","image","piece",
 }
+
+
+def stem(word):
+    """
+    Lightweight suffix-stripping stemmer (no external libraries).
+    Handles the most common English inflections relevant to this dataset.
+    Order matters — strip longer suffixes first.
+    """
+    # Protect very short words from over-stemming
+    if len(word) <= 4:
+        return word
+
+    # Common verb / adjective suffixes
+    for suffix in ("ingly", "ingly", "ness", "ment", "ful",
+                   "less", "ing", "tion", "sion", "ous",
+                   "ive", "ize", "ise", "est", "er", "ed", "ly", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) > 3:
+            return word[: -len(suffix)]
+
+    return word
 
 
 def tokenize(text):
     """Lowercase, strip punctuation, remove stop words."""
     if not text or pd.isna(text):
-        return []
+        return [] 
     tokens = re.findall(r"[a-z]+", str(text).lower())
     return [t for t in tokens if t not in STOP_WORDS and len(t) > 1]
 
@@ -499,7 +523,11 @@ def print_confusion_matrix(cm, classes):
 # ============================================================
 
 def apply_weights(X, params, block_cols):
-    """Scale each feature block by its weight. Text stays at 1.0."""
+    """
+    Scale each feature block by its weight. Text stays at 1.0.
+    Numeric block is scaled by w_numeric; price column (last in numeric block)
+    is multiplied by w_price on top (effective price weight = w_numeric * w_price).
+    """
     X = X.copy().astype(np.float32)
     for block, w in [("likert",   params["w_likert"]),
                      ("numeric",  params["w_numeric"]),
@@ -508,7 +536,8 @@ def apply_weights(X, params, block_cols):
         X[:, start:end] *= w
 
     price_col = block_cols["numeric"][1] - 1
-    X[:, price_col] *= 0.5
+    w_price = params.get("w_price", 0.0)
+    X[:, price_col] *= w_price
 
     return X
 
@@ -556,9 +585,9 @@ def grid_search(df):
     print("HYPERPARAMETER GRID SEARCH")
     print(f"{'='*70}")
     print(f"{'vocab':>6} {'alpha':>6} {'binary':>7} {'bins':>5} {'blend':>5} "
-          f"{'likert':>5} {'numeric':>5} {'categorical':>5} "
+          f"{'lik':>5} {'num':>5} {'price':>5} {'cat':>5} "
           f"{'Val Acc':>9} {'Val F1':>9}")
-    print("-" * 70)
+    print("-" * 76)
 
     best_f1, best_params, all_results = -1, None, []
 
@@ -570,13 +599,14 @@ def grid_search(df):
         bins_s = str(params["num_bins"]) if params["num_bins"] else "gauss"
         print(f"{params['vocab_size']:>6} {params['alpha']:>6.2f} {b_str:>7} "
               f"{bins_s:>5} {params['blend_weight']:>5} {params['w_likert']:>5}"
-              f"{params['w_numeric']:>5} {params['w_categorical']:>5} {val_acc:>9.4f} {val_f1:>9.4f}")
+              f"{params['w_numeric']:>5} {params['w_price']:>5} {params['w_categorical']:>5} "
+              f"{val_acc:>9.4f} {val_f1:>9.4f}")
 
         all_results.append((params, val_acc, val_f1))
         if val_f1 > best_f1:
             best_f1, best_params = val_f1, params
 
-    print("-" * 70)
+    print("-" * 76)
     print(f"\n✓ Best params  : {best_params}")
     print(f"  Best Val F1  : {best_f1:.4f}\n")
     return best_params, all_results
@@ -633,28 +663,28 @@ def final_evaluation(df, best_params):
     print(f"\nConfusion Matrix (rows=true, cols=predicted):")
     print_confusion_matrix(cm, CLASS_NAMES)
 
-    print(f"\nMISCLASSIFIED ENTRIES ({np.sum(y_pred != y_test)} total)")
-    print("-" * 70)
+    # print(f"\nMISCLASSIFIED ENTRIES ({np.sum(y_pred != y_test)} total)")
+    # print("-" * 70)
 
-    short = {
-        "The Persistence of Memory": "Persistence",
-        "The Starry Night":          "Starry Night",
-        "The Water Lily Pond":       "Water Lily",
-    }
+    # short = {
+    #     "The Persistence of Memory": "Persistence",
+    #     "The Starry Night":          "Starry Night",
+    #     "The Water Lily Pond":       "Water Lily",
+    # }
 
-    misclassified = test_df[y_pred != y_test].copy()
-    misclassified["predicted"] = y_pred[y_pred != y_test]
+    # misclassified = test_df[y_pred != y_test].copy()
+    # misclassified["predicted"] = y_pred[y_pred != y_test]
 
-    for _, row in misclassified.iterrows():
-        true_label = short[row[TARGET_COL]]
-        pred_label = short[row["predicted"]]
-        print(f"\n  ID {int(row[ID_COL])}  |  True: {true_label:<15}  Predicted: {pred_label}")
-        print(f"  Description : {str(row['text_description'])[:120]}")
-        print(f"  Food        : {str(row['text_food'])[:60]}")
-        print(f"  Soundtrack  : {str(row['text_soundtrack'])[:80]}")
-        print(f"  Sombre={row['sombre']}  Content={row['content']}  "
-            f"Calm={row['calm']}  Uneasy={row['uneasy']}  "
-            f"Emotion={row['emotion_intensity']}")
+    # for _, row in misclassified.iterrows():
+    #     true_label = short[row[TARGET_COL]]
+    #     pred_label = short[row["predicted"]]
+    #     print(f"\n  ID {int(row[ID_COL])}  |  True: {true_label:<15}  Predicted: {pred_label}")
+    #     print(f"  Description : {str(row['text_description'])[:120]}")
+    #     print(f"  Food        : {str(row['text_food'])[:60]}")
+    #     print(f"  Soundtrack  : {str(row['text_soundtrack'])[:80]}")
+    #     print(f"  Sombre={row['sombre']}  Content={row['content']}  "
+    #         f"Calm={row['calm']}  Uneasy={row['uneasy']}  "
+    #         f"Emotion={row['emotion_intensity']}")
 
     return nb_model, cnb_model, fit_info, test_acc, test_f1
 
