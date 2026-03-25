@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Trained softmax artifacts (regenerate with train_softmax.py)
+model_params*.npz
+preprocess_state.npz
+preprocess_state.json
+cv_selection_metrics.json
+
+# One-off experiment / error-analysis dumps
+*_experiment.json
+error_*.json
+error_*.csv
+confusion_matrix*.json
+grouped_cv_search.json
+repeated_cv_tuning.json
+softmax_setup_comparison.json
+train_metrics*.json
+
+# Proposal / report (do not push)
+Project_proposal/
+methodology_softmax.tex
+reference.bib
