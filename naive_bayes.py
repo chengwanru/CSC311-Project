@@ -25,7 +25,7 @@ from data_splitting import grouped_kfold_split, regular_split
 # ============================================================
 
 DATA_PATH   = "preprocessed.csv"
-RANDOM_SEED = 108
+RANDOM_SEED = 6
 K_FOLDS     = 5
 USE_KFOLD   = True
 
@@ -38,7 +38,7 @@ PARAM_GRID = {
     "blend_weight": [0.9, 1.0],
     "w_likert":      [1.0, 2.0],
     "w_numeric":     [0.5, 1.0],
-    "w_price":       [0.0, 0.2],  # extra scale on price only (after w_numeric)
+    "w_price":       [0.0],  # extra scale on price only (after w_numeric)
     "w_categorical": [1.0, 2.0],
 }
 
@@ -109,6 +109,8 @@ STOP_WORDS = {
     "makes",
     # domain stop words — appear in all classes equally
     "painting","art","picture","artwork","image","piece",
+    #generic words
+    "pizza", "bread", "water", "nothing", "nan"
 }
 
 
@@ -137,7 +139,7 @@ def tokenize(text):
     if not text or pd.isna(text):
         return [] 
     tokens = re.findall(r"[a-z]+", str(text).lower())
-    return [t for t in tokens if t not in STOP_WORDS and len(t) > 1]
+    return [stem(t) for t in tokens if t not in STOP_WORDS and len(t) > 1]
 
 
 def build_vocabulary(texts, vocab_size):
