@@ -1,21 +1,13 @@
 """
-Single entry point for multiseed 80/20 stacking experiments.
+Multiseed 80/20 stacking: fixed LR (C=100) + NB (α=0.9, blend=1); only **meta C**
+and **RF** (n_estimators, max_depth, min_samples_leaf) change per preset.
 
-Edit PRESETS below (or pass --preset NAME) to compare meta-LR C and RF settings
-with fixed LR/NB. Same protocol as the old min-priority / seed-eval scripts.
+Usage:
+  python stacking_experiments.py
+  python stacking_experiments.py --preset 1
+  python stacking_experiments.py --rank
 
-Usage
------
-  python stacking_experiments.py              # run all PRESETS, print summary
-  python stacking_experiments.py --preset A   # run one preset by id
-  python stacking_experiments.py --rank       # after all, sort by min acc then mean
-
-Preset fields
--------------
-  id          short id for --preset
-  meta_c      meta logistic regression C (smaller => stronger L2 on meta layer)
-  rf_n_est, rf_depth, rf_min_leaf   RandomForest (depth None = unlimited)
-  seeds       "short" (6) or "long" (10) — which split seeds to average over
+Add rows to PRESETS for new runs. `seeds`: short = 6 person-split seeds, long = 10.
 """
 from __future__ import annotations
 
@@ -75,29 +67,11 @@ class Preset:
     seeds: Literal["short", "long"]
 
 
-# --- Edit / duplicate rows here to try new approaches ---------------------------------
+# --- Main rows match README experiments 1 & 2; add more Preset(...) lines if needed -------
 PRESETS: Tuple[Preset, ...] = (
     Preset(
-        "A",
-        "Baseline: strong meta (C=1e4) + deep RF (200 trees, unbounded depth)",
-        1e4,
-        200,
-        None,
-        1,
-        "long",
-    ),
-    Preset(
-        "B",
-        "Regularised RF: meta C=1, RF 400/depth12/leaf4",
-        1.0,
-        400,
-        12,
-        4,
-        "long",
-    ),
-    Preset(
-        "C",
-        "Floor-focused: meta C=0.5, RF 200/unbounded/leaf1 (6-seed screen)",
+        "1",
+        "Experiment 1 — best min: meta C=0.5, RF n=200 depth=None leaf=1",
         0.5,
         200,
         None,
@@ -105,21 +79,12 @@ PRESETS: Tuple[Preset, ...] = (
         "short",
     ),
     Preset(
-        "D",
-        "Same RF as C but meta C=1.0 (6-seed screen)",
-        1.0,
+        "2",
+        "Experiment 2 — best mean: meta C=4, same RF as exp 1",
+        4.0,
         200,
         None,
         1,
-        "short",
-    ),
-    Preset(
-        "E",
-        "Match old fast-eval: meta 1, RF 400/12/4 (6-seed screen)",
-        1.0,
-        400,
-        12,
-        4,
         "short",
     ),
 )
