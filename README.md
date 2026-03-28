@@ -1,6 +1,8 @@
 # CSC311 — `cheng2` (stacking development)
 
-Stacking: **LR + NB/CNB + RF** → **meta logistic regression** on 5-fold person-level OOF probs (`stacking_ensemble.py`). MarkUs-ready code is on **`final`** only (`git checkout final`).
+This branch is **based on the original `stacking-ensemble` work**: the same **stacking** idea (**LR + NB/CNB + RF** → **meta logistic regression** on 5-fold person-level OOF probabilities), implemented in `stacking_ensemble.py` with shared `pipeline.py` / `naive_bayes.py`.
+
+On top of that baseline, we **ran extra experiments**—mostly changing **meta `C`** and **RF** settings and measuring **min / mean / max** test accuracy over several split seeds (`stacking_experiments.py`). The table below is that follow-up study; the **MarkUs-ready** snapshot (fixed hyperparameters, `pred.py`, export) is on **`final`** (`git checkout final`).
 
 ---
 
@@ -13,16 +15,16 @@ Same setup for both: **6 seeds** `[1,7,13,21,42,84]`, person-level 80% train+val
 | **1** | 0.5 | **0.9233** | 0.9380 | 0.9602 |
 | **2** | 4.0 | 0.9172 | **0.9385** | 0.9602 |
 
-**1** — best **worst-seed** (min). **2** — best **average** (mean); min is lower.
+**1** — best **min**. **2** — best **mean** (lower min).
 
-Re-run: `python stacking_experiments.py` (presets **`1`** and **`2`** in `stacking_experiments.py`).
+Re-run: `python stacking_experiments.py` (presets `1` and `2` in `stacking_experiments.py`).
 
 ---
 
-## Parameters we actually changed
+## Parameters we changed
 
-- **`meta_c`** — regularisation on the meta logistic layer; **smaller ⇒ stronger** regularisation.
-- **RF** — here both runs used **200 trees, no depth cap, `min_samples_leaf=1`**.
+- **meta `C`** — regularisation on the meta logistic layer; smaller ⇒ stronger regularisation.
+- **RF** — both runs above used **200 trees, no depth cap, `min_samples_leaf=1`**.
 
 ---
 
@@ -34,4 +36,4 @@ Re-run: `python stacking_experiments.py` (presets **`1`** and **`2`** in `stacki
 
 ---
 
-*Submit bundle: **`final`** branch.*
+*Submission bundle: **`final`** branch.*
