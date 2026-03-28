@@ -71,6 +71,8 @@ Numbers depend on **seed list** and code version; treat as **ballpark** and refr
 
 ## Submission snapshot
 
+**`cheng2` does not include MarkUs submission files** (`pred.py`, `export_model.py`, or model weight bundles). Those live only on **`final`**.
+
 ```bash
 git checkout final
 ```

@@ -1,0 +1,20 @@
+# Python / OS
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+
+# MarkUs / export artifacts — belong on `final` branch only; ignore if generated locally on cheng2
+model_weights.npz
+model_state.json
+
+# Old experiment dumps (not part of stacking dev tree)
+model_params.npz
+preprocess_state.json
+preprocess_state.npz
+cv_selection_metrics.json
+
+# Proposal / softmax-era drafts (keep locally if needed; do not clutter this branch)
+Project_proposal/
+methodology_softmax.tex
+reference.bib
