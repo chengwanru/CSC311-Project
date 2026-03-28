@@ -9,7 +9,7 @@ Replaces the former trio of:
   data_splitting.py  — regular_split(), grouped_kfold_split()
   run_preprocess.py  — one-shot preprocessing utility
 
-Training scripts (naive_bayes.py, stacking_ensemble.py, stacking_*eval*.py)
+Training scripts (naive_bayes.py, stacking_ensemble.py, stacking_experiments.py)
 import from this module for shared preprocessing and splits.
 
 pred.py is intentionally self-contained (no project imports allowed).
