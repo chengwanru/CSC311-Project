@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+
+# Regenerate with: python export_model.py
+model_weights.npz
+model_state.json
