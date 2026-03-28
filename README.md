@@ -25,21 +25,23 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 
 ## What each file is for
 
-| File | Role |
-|------|------|
-| `stacking_ensemble.py` | Local **evaluation**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Uses **sklearn**. |
-| `export_model.py` | **Train on full** `training_data.csv` and write `model_state.json` + `model_weights.npz` for MarkUs prediction. Uses **sklearn**. |
-| `pred.py` | **MarkUs prediction entry**: `predict_all(csv_path)` → list of painting name strings. **Only** stdlib, **numpy**, **pandas** — loads the two artifact files, no sklearn. |
-| `pipeline.py` | Cleaning, person-level splits, TF–IDF vocab/IDF, `fit_state` / `transform_df` for LR/RF features. |
-| `naive_bayes.py` | NB/CNB feature matrix, training helpers, and the same NB logic the export script uses. |
-| `data_exploration.py` | Exploratory analysis script; include in **code.zip** if you use it as report evidence. |
-| `training_data.csv` | Course training data (keep in repo / push as your team agrees). |
-| `LICENSE` | License for the repo. |
-| `.gitignore` | Ignores caches, venv, and generated `model_state.json` / `model_weights.npz` (regenerate before submit). |
+
+| File                   | Role                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stacking_ensemble.py` | Local **evaluation**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Uses **sklearn**.                                                                        |
+| `export_model.py`      | **Train on full** `training_data.csv` and write `model_state.json` + `model_weights.npz` for MarkUs prediction. Uses **sklearn**.                                        |
+| `pred.py`              | **MarkUs prediction entry**: `predict_all(csv_path)` → list of painting name strings. **Only** stdlib, **numpy**, **pandas** — loads the two artifact files, no sklearn. |
+| `pipeline.py`          | Cleaning, person-level splits, TF–IDF vocab/IDF, `fit_state` / `transform_df` for LR/RF features.                                                                        |
+| `naive_bayes.py`       | NB/CNB feature matrix, training helpers, and the same NB logic the export script uses.                                                                                   |
+| `data_exploration.py`  | Exploratory analysis script; include in **code.zip** if you use it as report evidence.                                                                                   |
+| `training_data.csv`    | Course training data (keep in repo / push as your team agrees).                                                                                                          |
+| `LICENSE`              | License for the repo.                                                                                                                                                    |
+| `.gitignore`           | Ignores caches, venv, and generated `model_state.json` / `model_weights.npz` (regenerate before submit).                                                                 |
+
 
 ---
 
-## What to submit (MarkUs)
+## What to submit
 
 **Prediction assignment**
 
@@ -49,7 +51,7 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 **Report assignment**
 
 - `report.pdf`
-- `code.zip` — all **`.py`** (and any **`.ipynb`**) you used to **develop** the final model (e.g. the files above; **exclude** a `/data` folder if you have one, per instructions). This zip is evidence only; it does not need to be runnable on the TA’s machine.
+- `code.zip` — all `**.py`** (and any `**.ipynb**`) you used to **develop** the final model (e.g. the files above; **exclude** a `/data` folder if you have one, per instructions). This zip is evidence only; it does not need to be runnable on the TA’s machine.
 
 ---
 
@@ -70,4 +72,7 @@ python pred.py training_data.csv
 
 ## Branch note
 
-Work for the final layout lives on **`final`**. The **`cheng2`** branch was not advanced with these commits; switch with `git checkout final` when working on submission files.
+- **`cheng2`** — Original development code (full history / experiments).
+- **`final`** — Submission-ready version: cleaned layout, final stacking setup, `pred.py` + export pipeline, and this README.
+
+Use `git checkout final` when preparing MarkUs files; use `cheng2` if you need the older tree.
