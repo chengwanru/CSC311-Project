@@ -15,7 +15,17 @@ For MarkUs prediction (no sklearn in pred.py): train on ALL data and export with
 then submit pred.py + model_state.json + model_weights.npz.
 
 Run: python stacking_ensemble.py
+
+Programmatic use (e.g. report figures):
+  from stacking_ensemble import run_stacking_eval
+  r = run_stacking_eval(split_seed=42)
 """
+
+from __future__ import annotations
+
+import contextlib
+import io
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -102,10 +112,37 @@ def _report(name, y_true, pred):
     return acc, f1
 
 
-def main():
+def run_stacking_eval(
+    split_seed: Optional[int] = None, *, verbose: bool = True
+) -> Dict[str, Any]:
+    """
+    Train/evaluate the final stacking pipeline (model A) with a person-level split.
+
+    Parameters
+    ----------
+    split_seed
+        Seed for ``regular_split`` and for sklearn ``random_state`` in bases/meta.
+        Default: ``pipeline.RANDOM_STATE`` (42).
+    verbose
+        If False, suppress printed progress (for batch runs, e.g. ``report_figures.py``).
+
+    Returns
+    -------
+    dict with keys including ``y_test``, ``pred_stack``, ``pred_lr``, ``pred_nb``,
+    ``pred_rf``, ``pred_maj``, per-model accuracies, ``macro_f1_stack``,
+    ``confusion_matrix`` (3x3 int, true rows / pred cols), ``class_names``,
+    ``split_seed``, ``n_train``, ``n_val``, ``n_test``.
+    """
+    seed = RANDOM_STATE if split_seed is None else int(split_seed)
+    out_cm = contextlib.nullcontext() if verbose else contextlib.redirect_stdout(io.StringIO())
+    with out_cm:
+        return _run_stacking_eval_core(seed)
+
+
+def _run_stacking_eval_core(seed: int) -> Dict[str, Any]:
     df_clean = clean(pd.read_csv(CSV_PATH))
 
-    train_df, val_df, test_df = regular_split(df_clean, random_state=RANDOM_STATE)
+    train_df, val_df, test_df = regular_split(df_clean, random_state=seed)
     train_df = train_df.sort_values(SORT_KEY).reset_index(drop=True)
     val_df = val_df.sort_values(SORT_KEY).reset_index(drop=True)
     test_df = test_df.sort_values(SORT_KEY).reset_index(drop=True)
@@ -151,7 +188,7 @@ def main():
 
     print(f"\n[Stage 2] OOF prediction generation on {n_tv}-row trainval pool...")
 
-    rng = np.random.RandomState(RANDOM_STATE)
+    rng = np.random.RandomState(seed)
     tv_ids = df_tv["unique_id"].unique()
     rng.shuffle(tv_ids)
     id_folds = np.array_split(tv_ids, K_FOLDS)
@@ -176,7 +213,7 @@ def main():
             C=LR_C,
             class_weight=LR_CLASS_WEIGHT,
             solver="lbfgs",
-            random_state=RANDOM_STATE,
+            random_state=seed,
         )
         lr_f.fit(X_tv[tr_mask], y_tv[tr_mask])
         oof_lr[vl_mask] = lr_f.predict_proba(X_tv[vl_mask])
@@ -191,7 +228,7 @@ def main():
             n_estimators=RF_N_ESTIMATORS,
             max_depth=RF_MAX_DEPTH,
             min_samples_leaf=RF_MIN_SAMPLES_LEAF,
-            random_state=RANDOM_STATE,
+            random_state=seed,
             n_jobs=-1,
         )
         rf_f.fit(X_tv[tr_mask], y_tv[tr_mask])
@@ -207,7 +244,7 @@ def main():
 
     print(f"\n[Stage 3] Training meta-LR (C={META_C}) on OOF features...")
     meta_lr = LogisticRegression(
-        max_iter=5000, C=META_C, solver="lbfgs", random_state=RANDOM_STATE
+        max_iter=5000, C=META_C, solver="lbfgs", random_state=seed
     )
     meta_lr.fit(meta_train, y_tv)
 
@@ -226,7 +263,7 @@ def main():
         C=LR_C,
         class_weight=LR_CLASS_WEIGHT,
         solver="lbfgs",
-        random_state=RANDOM_STATE,
+        random_state=seed,
     )
     lr80.fit(X_tv, y_tv)
     p_lr_test = lr80.predict_proba(X_test)
@@ -241,7 +278,7 @@ def main():
         n_estimators=RF_N_ESTIMATORS,
         max_depth=RF_MAX_DEPTH,
         min_samples_leaf=RF_MIN_SAMPLES_LEAF,
-        random_state=RANDOM_STATE,
+        random_state=seed,
         n_jobs=-1,
     )
     rf80.fit(X_tv, y_tv)
@@ -269,6 +306,56 @@ def main():
     agree = (pred_stack == pred_maj).sum()
     print(f"\n  Stacking agrees with majority vote on {agree}/{len(y_test)}"
           f" ({100*agree/len(y_test):.1f}%) of test rows.")
+
+    cm = np.zeros((K, K), dtype=int)
+    for i in range(K):
+        for j in range(K):
+            cm[i, j] = int(np.sum((y_test == i) & (pred_stack == j)))
+
+    acc_lr, f1_lr = accuracy_score(y_test, pred_lr), f1_score(
+        y_test, pred_lr, average="macro", zero_division=0
+    )
+    acc_nb, f1_nb = accuracy_score(y_test, pred_nb), f1_score(
+        y_test, pred_nb, average="macro", zero_division=0
+    )
+    acc_rf, f1_rf = accuracy_score(y_test, pred_rf), f1_score(
+        y_test, pred_rf, average="macro", zero_division=0
+    )
+    acc_maj, f1_maj = accuracy_score(y_test, pred_maj), f1_score(
+        y_test, pred_maj, average="macro", zero_division=0
+    )
+    acc_stack, f1_stack = accuracy_score(y_test, pred_stack), f1_score(
+        y_test, pred_stack, average="macro", zero_division=0
+    )
+
+    return {
+        "split_seed": seed,
+        "class_names": list(classes),
+        "y_test": y_test,
+        "pred_stack": pred_stack,
+        "pred_lr": pred_lr,
+        "pred_nb": pred_nb,
+        "pred_rf": pred_rf,
+        "pred_maj": pred_maj,
+        "acc_lr": float(acc_lr),
+        "acc_nb": float(acc_nb),
+        "acc_rf": float(acc_rf),
+        "acc_maj": float(acc_maj),
+        "acc_stack": float(acc_stack),
+        "macro_f1_lr": float(f1_lr),
+        "macro_f1_nb": float(f1_nb),
+        "macro_f1_rf": float(f1_rf),
+        "macro_f1_maj": float(f1_maj),
+        "macro_f1_stack": float(f1_stack),
+        "confusion_matrix": cm,
+        "n_train": len(train_df),
+        "n_val": len(val_df),
+        "n_test": len(test_df),
+    }
+
+
+def main() -> None:
+    run_stacking_eval(split_seed=None, verbose=True)
 
 
 if __name__ == "__main__":

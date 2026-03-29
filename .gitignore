@@ -6,3 +6,6 @@ __pycache__/
 # Regenerate with: python export_model.py
 model_weights.npz
 model_state.json
+
+# Local matplotlib cache (optional; report_figures.py)
+.mplconfig/

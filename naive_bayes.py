@@ -9,8 +9,9 @@ Inline parsing with pipeline.extract_likert() and pipeline.extract_numeric()
 replaces the former preprocessed.csv intermediate file, so all three model
 families now share a single data source with no row-count mismatches.
 
-Covers: feature engineering, model training,
-        hyperparameter tuning, and evaluation.
+Covers: feature engineering, model training, evaluation, and optional
+        standalone grid-search experiments in ``main`` (not used by the final
+        stacking / export pipeline).
 
 Requires:  pipeline.py in the same directory.
 Run:       python naive_bayes.py

@@ -1,5 +1,13 @@
 # CSC311 Project — `final` branch
 
+This branch matches the **course submission layout** (Winter 2026 CSC311 project instructions): MarkUs **prediction** (`pred.py` + small artifacts), **report** (`report.pdf` + `code.zip` evidence).
+
+## Final model choice (**model A**)
+
+The **submitted** classifier is **stacking model A**: fixed hyperparameters, three base models (LR, NB/CNB blend, RF), **9-dimensional** OOF meta-features, meta logistic regression **C = 0.5** — implemented in `stacking_ensemble.py` (evaluation) and `export_model.py` (full-data train for `pred.py`).
+
+**Appendix-only code (models B & C)** lives in `appendix_code/` (see `appendix_code/README.md`). Include that folder in **code.zip** for the report; it is **not** loaded by `pred.py`.
+
 ## Our approach
 
 We use **stacking**: three base classifiers each output class probabilities; a **meta-model** (multinomial logistic regression) learns how to combine those probabilities. Final prediction is the meta-model’s argmax over three painting classes.
@@ -28,9 +36,11 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 
 | File                   | Role                                                                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `stacking_ensemble.py` | Local **evaluation**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Uses **sklearn**.                                                                        |
+| `stacking_ensemble.py` | Local **evaluation** for **model A**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Exposes `run_stacking_eval()` for scripts. Uses **sklearn**.               |
 | `export_model.py`      | **Train on full** `training_data.csv` and write `model_state.json` + `model_weights.npz` for MarkUs prediction. Uses **sklearn**.                                        |
 | `pred.py`              | **MarkUs prediction entry**: `predict_all(csv_path)` → list of painting name strings. **Only** stdlib, **numpy**, **pandas** — loads the two artifact files, no sklearn. |
+| `report_figures.py`    | Optional: builds **figures/** and CSV tables for the report (`pip install -r requirements-figures.txt`).                                                                |
+| `appendix_code/`       | **Models B & C** + `stacking_experiments.py` (multiseed meta-C sweep). Not used by `pred.py`; zip for report evidence.                                                    |
 | `pipeline.py`          | Cleaning, person-level splits, TF–IDF vocab/IDF, `fit_state` / `transform_df` for LR/RF features.                                                                        |
 | `naive_bayes.py`       | NB/CNB feature matrix, training helpers, and the same NB logic the export script uses.                                                                                   |
 | `data_exploration.py`  | Exploratory analysis script; include in **code.zip** if you use it as report evidence.                                                                                   |
@@ -41,17 +51,35 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 
 ---
 
-## What to submit
+## What to submit (per course instructions)
 
-**Prediction assignment**
+**Prediction assignment (MarkUs)**
 
-- `pred.py`
-- `model_state.json` and `model_weights.npz` (run `python export_model.py` first; combined size must stay under **10 MB**)
+- **`pred.py`** — Python **3.10+**; imports restricted to **stdlib, numpy, pandas** only; must define **`predict_all(csv_path)`** returning predictions; **no networking**; should run ~60 predictions within **~1 minute** with reasonable memory.
+- **`model_state.json`** and **`model_weights.npz`** — generate with `python export_model.py`; combined size **≤ 10 MB**.
 
-**Report assignment**
+**Report assignment (MarkUs)**
 
-- `report.pdf`
-- `code.zip` — all `**.py`** (and any `**.ipynb**`) you used to **develop** the final model (e.g. the files above; **exclude** a `/data` folder if you have one, per instructions). This zip is evidence only; it does not need to be runnable on the TA’s machine.
+- **`report.pdf`**
+- **`code.zip`** — all `**.py`** / `**.ipynb**` used to develop the final model. **Exclude** any `/data` folder per instructions. The zip is **evidence only** (need not be runnable on the TA machine); include **`appendix_code/`** if you discuss models B/C in the appendix.
+
+Suggested **code.zip** contents: `pred.py`, `export_model.py`, `stacking_ensemble.py`, `pipeline.py`, `naive_bayes.py`, `data_exploration.py`, `report_figures.py`, `appendix_code/` (entire folder), `requirements-figures.txt`.
+
+---
+
+## Report figures (Results / Appendix)
+
+Install optional dependency: `pip install -r requirements-figures.txt`
+
+```bash
+# Default split seed + stability over 6 person-level split seeds (model A)
+python report_figures.py
+
+# Also evaluate appendix B & C over the same seeds (slow)
+python report_figures.py --appendix
+```
+
+Outputs go to **`figures/`** — see the **module docstring** in `report_figures.py` for the full output list and rubric mapping.
 
 ---
 

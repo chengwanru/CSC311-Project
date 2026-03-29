@@ -1,5 +1,6 @@
 """
-Train final stacking on ALL of training_data.csv and export artifacts for pred.py
+Train **model A** (same stacking recipe as ``stacking_ensemble.py``) on ALL of
+``training_data.csv`` and export artifacts for ``pred.py``
 (sklearn allowed here; pred.py uses only numpy/pandas per course rules).
 
 Run from repo root (with training_data.csv present):
