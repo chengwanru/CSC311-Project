@@ -14,13 +14,13 @@ Usage (repository root, ``training_data.csv`` present)::
 **Outputs (rubric mapping)**
 
 ``plots/01_model_compare_test.png``
-    Bar chart: held-out test accuracy and macro-F1 for LR, NB, RF, majority vote, stacking.
+    Bar chart: test-set accuracy and macro-F1 for LR, NB, RF, majority vote, stacking.
 
 ``plots/02_confusion_matrix_stacking.png``
-    Confusion matrix for stacked classifier on held-out 20% test.
+    Confusion matrix for stacked classifier on the 20% test set.
 
 ``plots/03_errors_true_starry_night.png``
-    True class Starry Night: distribution of predicted labels on held-out test.
+    True class Starry Night: distribution of predicted labels on the test set.
 
 ``plots/04_partition_seed_sensitivity.png``
     Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
@@ -104,9 +104,9 @@ def figure_model_compare(r: dict, path: Path, split_seed: int) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 1 — Held-out test: accuracy vs macro-F1",
+            "Figure 1 — Test set: accuracy vs macro-F1",
             "LR, NB, RF, majority vote, stacked meta-classifier",
-            "Split: 80% respondents train+val, 20% held-out test",
+            "Split: 80% respondents train+val, 20% test set",
             f"Seed {split_seed}",
         ),
     )
@@ -144,9 +144,9 @@ def figure_confusion_matrix(
     _figure_label_below(
         fig,
         (
-            "Figure 2 — Confusion matrix (stacked classifier, held-out test)",
+            "Figure 2 — Confusion matrix (stacked classifier, test set)",
             "Rows: true class, columns: predicted class (counts)",
-            "Split: 80% respondents train+val, 20% test",
+            "Split: 80% respondents train+val, 20% test set",
             f"Seed {split_seed}",
         ),
     )
@@ -175,7 +175,7 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 3 — True class: The Starry Night (held-out test rows)",
+            "Figure 3 — True class: The Starry Night (test set rows only)",
             "Counts of predicted class by the stacked model",
             "Same split as Figures 1–2",
             f"Seed {split_seed}",
@@ -190,7 +190,7 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
     ax.set_xlabel("Random seed (80/20 train+val vs test, same protocol each run)")
-    ax.set_ylabel("Stacking accuracy on held-out 20% test")
+    ax.set_ylabel("Stacking accuracy on 20% test set")
     ax.grid(True, alpha=0.3)
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
