@@ -23,7 +23,7 @@ Usage (repository root, ``training_data.csv`` present)::
     True class Starry Night: distribution of predicted labels on held-out test.
 
 ``plots/04_partition_seed_sensitivity.png``
-    Stacking test accuracy vs RNG seed used to shuffle persons before 80/20 split.
+    Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
 
 ``plots/05_appendix_model_compare_min_mean_max.csv``
     Min/mean/max table; ``--appendix`` adds extra rows and ``05_appendix_model_compare.png``.
@@ -44,9 +44,20 @@ SPLIT_SEEDS_DEFAULT = [1, 7, 13, 21, 42, 84]
 PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 
-def _title_left(ax, lines: tuple[str, ...]) -> None:
-    """Multi-line figure title inside the axes (no long bottom caption — avoids wide/flat bbox)."""
-    ax.set_title("\n".join(lines), fontsize=10, fontweight="bold", loc="left", pad=14)
+def _figure_label_below(fig, lines: tuple[str, ...]) -> None:
+    """Multi-line figure title under the axes (reserve bottom margin first)."""
+    fig.tight_layout(rect=[0, 0.20, 1, 0.98])
+    fig.text(
+        0.5,
+        0.02,
+        "\n".join(lines),
+        ha="center",
+        va="bottom",
+        fontsize=10,
+        fontweight="bold",
+        transform=fig.transFigure,
+        linespacing=1.35,
+    )
 
 
 def _short_labels(names: list[str]) -> list[str]:
@@ -86,20 +97,20 @@ def figure_model_compare(r: dict, path: Path, split_seed: int) -> None:
     ax.grid(axis="y", alpha=0.3)
     # Macro-F1 can track accuracy closely on balanced 3-class data — show numeric values on bars.
     try:
-        ax.bar_label(bars_acc, fmt="%.4f", fontsize=5, padding=2)
-        ax.bar_label(bars_f1, fmt="%.4f", fontsize=5, padding=2)
+        ax.bar_label(bars_acc, fmt="%.4f", fontsize=7, padding=2)
+        ax.bar_label(bars_f1, fmt="%.4f", fontsize=7, padding=2)
     except AttributeError:
         pass
-    _title_left(
-        ax,
+    _figure_label_below(
+        fig,
         (
             "Figure 1 — Held-out test: accuracy vs macro-F1",
             "LR, NB, RF, majority vote, stacked meta-classifier",
-            f"80% persons train+val / 20% test · partition RNG seed {split_seed}",
+            "Split: 80% respondents train+val, 20% held-out test",
+            f"Seed {split_seed}",
         ),
     )
-    fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -130,16 +141,16 @@ def figure_confusion_matrix(
                 va="center",
                 color="white" if cm[i, j] > thresh else "black",
             )
-    _title_left(
-        ax,
+    _figure_label_below(
+        fig,
         (
-            "Figure 2 — Confusion matrix: stacking on test set",
-            "Rows = true class, columns = predicted class (counts)",
-            f"Person-level split · regular_split seed = {split_seed}",
+            "Figure 2 — Confusion matrix (stacked classifier, held-out test)",
+            "Rows: true class, columns: predicted class (counts)",
+            "Split: 80% respondents train+val, 20% test",
+            f"Seed {split_seed}",
         ),
     )
-    fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -161,16 +172,16 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     ax.bar(short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))])
     ax.set_ylabel("Test row count")
     ax.grid(axis="y", alpha=0.3)
-    _title_left(
-        ax,
+    _figure_label_below(
+        fig,
         (
-            "Figure 3 — True class: The Starry Night (held-out test)",
-            "How often stacking predicts each class for those rows",
-            f"Same 80/20 partition as Figures 1–2 · seed {split_seed}",
+            "Figure 3 — True class: The Starry Night (held-out test rows)",
+            "Counts of predicted class by the stacked model",
+            "Same split as Figures 1–2",
+            f"Seed {split_seed}",
         ),
     )
-    fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -178,24 +189,23 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
     fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
-    ax.set_xlabel("RNG seed (shuffle persons, then 80/20 train+val vs test)")
-    ax.set_ylabel("Stacking accuracy on 20% held-out test")
+    ax.set_xlabel("Random seed (80/20 train+val vs test, same protocol each run)")
+    ax.set_ylabel("Stacking accuracy on held-out 20% test")
     ax.grid(True, alpha=0.3)
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
     ax.axhline(np.mean(accs), color="green", linestyle=":", alpha=0.8, label=f"mean={np.mean(accs):.4f}")
     ax.legend(loc="lower right")
     seed_list = ", ".join(str(s) for s in seeds)
-    _title_left(
-        ax,
+    _figure_label_below(
+        fig,
         (
-            "Figure 4 — Sensitivity to train/test partition",
-            f"Seeds tried: {seed_list}",
-            "Same hyperparameters; only the person shuffle before splitting changes",
+            "Figure 4 — Stacking test accuracy vs random seed",
+            f"Seeds: {seed_list}",
+            "Hyperparameters fixed; only the random train/test split changes",
         ),
     )
-    fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -213,20 +223,19 @@ def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
     n = len(summary)
     mid = (
-        "Six partition seeds per configuration (same protocol as Fig. 4)"
+        "Six random seeds per configuration (same protocol as Figure 4)"
         if n > 1
-        else "Default run: submitted stacking only (see --appendix for comparisons)"
+        else "Default script: one stacking configuration (--appendix adds more)"
     )
-    _title_left(
-        ax,
+    _figure_label_below(
+        fig,
         (
-            "Figure 5 — Test accuracy: min, mean, max over partition seeds",
+            "Figure 5 — Test accuracy: min, mean, max over random seeds",
             mid,
             f"{n} configuration(s)",
         ),
     )
-    fig.tight_layout()
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
