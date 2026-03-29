@@ -20,7 +20,7 @@ Usage (repository root, ``training_data.csv`` present)::
     Confusion matrix for stacked classifier on the 20% test set.
 
 ``plots/03_errors_true_starry_night.png``
-    True class Starry Night: predicted-label counts on the test set; integer on each bar.
+    True class Starry Night: **counts** of predicted label (not %); legend = correct vs wrong.
 
 ``plots/04_partition_seed_sensitivity.png``
     Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
@@ -35,6 +35,7 @@ import importlib.util
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -46,7 +47,7 @@ PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 def _figure_label_below(fig, lines: tuple[str, ...]) -> None:
     """Multi-line figure title under the axes (reserve bottom margin first)."""
-    fig.tight_layout(rect=[0, 0.22, 1, 0.98])
+    fig.tight_layout(rect=[0, 0.26, 1, 0.98])
     fig.text(
         0.5,
         0.02,
@@ -168,12 +169,33 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
         return
     preds_on_sn = pred[mask]
     counts = np.bincount(preds_on_sn, minlength=len(names))
-    fig, ax = plt.subplots(figsize=(6, 4.5))
+    n_sub = int(mask.sum())
+    n_ok = int(counts[sn_i])
+    n_wrong = n_sub - n_ok
+    fig, ax = plt.subplots(figsize=(6.4, 5.0))
     bars = ax.bar(
         short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))]
     )
-    ax.set_ylabel("Test row count")
+    ax.set_ylabel("Number of test rows (counts, not %)")
     ax.grid(axis="y", alpha=0.3)
+    ax.legend(
+        handles=[
+            Patch(
+                facecolor="#e94b3c",
+                edgecolor="#333333",
+                linewidth=0.4,
+                label="Correct (predicted Starry Night)",
+            ),
+            Patch(
+                facecolor="#4a90d9",
+                edgecolor="#333333",
+                linewidth=0.4,
+                label="Wrong (predicted another class)",
+            ),
+        ],
+        loc="upper right",
+        fontsize=8,
+    )
     try:
         ax.bar_label(bars, labels=[str(int(c)) for c in counts], fontsize=8, padding=2)
     except AttributeError:
@@ -183,8 +205,9 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 3 — True class: The Starry Night (test set rows only)",
-            "Counts of predicted class by the stacked model",
+            "Figure 3 — Only rows whose true class is The Starry Night (test set)",
+            "Each bar: how many of those rows were predicted as that label (absolute counts)",
+            f"Summary: {n_ok} correct, {n_wrong} wrong, out of {n_sub} rows",
             "Same split as Figures 1–2",
             f"Seed {split_seed}",
         ),
