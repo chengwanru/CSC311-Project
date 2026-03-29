@@ -23,7 +23,7 @@ Usage (repository root, ``training_data.csv`` present)::
     True class Starry Night: distribution of predicted labels on the test set.
 
 ``plots/04_partition_seed_sensitivity.png``
-    Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
+    Stacking **test accuracy** (fraction correct) vs random seed; numeric label on each point.
 
 ``plots/05_appendix_model_compare_min_mean_max.csv``
     Min/mean/max table; ``--appendix`` adds extra rows and ``05_appendix_model_compare.png``.
@@ -46,7 +46,7 @@ PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 def _figure_label_below(fig, lines: tuple[str, ...]) -> None:
     """Multi-line figure title under the axes (reserve bottom margin first)."""
-    fig.tight_layout(rect=[0, 0.20, 1, 0.98])
+    fig.tight_layout(rect=[0, 0.22, 1, 0.98])
     fig.text(
         0.5,
         0.02,
@@ -187,11 +187,24 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
 
 def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
+    seeds = list(seeds)
+    accs = list(accs)
     fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
     ax.set_xlabel("Random seed (80/20 train+val vs test, same protocol each run)")
-    ax.set_ylabel("Stacking accuracy on 20% test set")
+    ax.set_ylabel("Test accuracy (fraction correct, not error rate)")
+    ax.set_ylim(min(accs) - 0.04, max(accs) + 0.06)
     ax.grid(True, alpha=0.3)
+    for sd, acc in zip(seeds, accs):
+        ax.annotate(
+            f"{acc:.4f}",
+            (sd, acc),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+            fontweight="bold",
+        )
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
     ax.axhline(np.mean(accs), color="green", linestyle=":", alpha=0.8, label=f"mean={np.mean(accs):.4f}")
@@ -202,6 +215,7 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
         (
             "Figure 4 — Stacking test accuracy vs random seed",
             f"Seeds: {seed_list}",
+            "Each point: share of correct predictions on the 20% test set",
             "Hyperparameters fixed; only the random train/test split changes",
         ),
     )
