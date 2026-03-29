@@ -39,7 +39,7 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 | `stacking_ensemble.py` | Local **evaluation** for **model A**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Exposes `run_stacking_eval()` for scripts. Uses **sklearn**.               |
 | `export_model.py`      | **Train on full** `training_data.csv` and write `model_state.json` + `model_weights.npz` for MarkUs prediction. Uses **sklearn**.                                        |
 | `pred.py`              | **MarkUs prediction entry**: `predict_all(csv_path)` → list of painting name strings. **Only** stdlib, **numpy**, **pandas** — loads the two artifact files, no sklearn. |
-| `report_figures.py`    | Optional: builds **figures/** and CSV tables for the report (`pip install -r requirements-figures.txt`).                                                                |
+| `report_figures.py`    | Optional: builds **`plots/`** and CSV tables for the report (`pip install -r requirements-figures.txt`).                                                                |
 | `appendix_code/`       | **Models B & C** + `stacking_experiments.py` (multiseed meta-C sweep). Not used by `pred.py`; zip for report evidence.                                                    |
 | `pipeline.py`          | Cleaning, person-level splits, TF–IDF vocab/IDF, `fit_state` / `transform_df` for LR/RF features.                                                                        |
 | `naive_bayes.py`       | NB/CNB feature matrix, training helpers, and the same NB logic the export script uses.                                                                                   |
@@ -79,7 +79,7 @@ python report_figures.py
 python report_figures.py --appendix
 ```
 
-Outputs go to **`figures/`** — see the **module docstring** in `report_figures.py` for the full output list and rubric mapping.
+Outputs go to **`plots/`** — see the **module docstring** in `report_figures.py` and **`plots/README.md`** for captions. Each PNG has a bold **Figure N** title and a **Caption:** line in the image.
 
 ---
 
