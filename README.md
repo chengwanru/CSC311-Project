@@ -79,7 +79,7 @@ python report_figures.py
 python report_figures.py --appendix
 ```
 
-Outputs go to **`plots/`** — see the **module docstring** in `report_figures.py` and **`plots/README.md`** for captions. Each PNG has a bold **Figure N** title and a **Caption:** line in the image.
+Outputs go to **`plots/`** — see **`plots/README.md`** and the **module docstring** in `report_figures.py`. Each PNG uses a short **multi-line title** (no long footnote caption, so aspect ratio stays natural).
 
 ---
 

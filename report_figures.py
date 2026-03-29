@@ -45,11 +45,9 @@ SPLIT_SEEDS_DEFAULT = [1, 7, 13, 21, 42, 84]
 PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 
-def _finish_figure(fig, *, suptitle: str, caption: str) -> None:
-    """Bold figure title (what plot) + caption line (protocol / how to read)."""
-    fig.suptitle(suptitle, fontsize=12, fontweight="bold", y=0.98)
-    fig.text(0.5, 0.02, caption, ha="center", va="bottom", fontsize=8.5)
-    fig.tight_layout(rect=[0, 0.08, 1, 0.90])
+def _title_left(ax, lines: tuple[str, ...]) -> None:
+    """Multi-line figure title inside the axes (no long bottom caption — avoids wide/flat bbox)."""
+    ax.set_title("\n".join(lines), fontsize=10, fontweight="bold", loc="left", pad=14)
 
 
 def _short_labels(names: list[str]) -> list[str]:
@@ -78,27 +76,25 @@ def figure_model_compare(r: dict, path: Path, split_seed: int) -> None:
     ]
     x = np.arange(len(names))
     w = 0.35
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(7, 4.8))
     ax.bar(x - w / 2, accs, width=w, label="Accuracy")
     ax.bar(x + w / 2, f1s, width=w, label="Macro F1")
     ax.set_xticks(x)
     ax.set_xticklabels(names)
     ax.set_ylim(0, 1.05)
     ax.set_ylabel("Score")
-    ax.set_title("Metrics on held-out 20% test (same split as stacking evaluation)")
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
-    _finish_figure(
-        fig,
-        suptitle="Figure 1 — Model comparison: accuracy and macro-F1 (final model A)",
-        caption=(
-            f"Caption: Bar chart comparing five predictors on the test fold only — "
-            f"logistic regression, custom NB/CNB, random forest, majority vote of the three bases, "
-            f"and stacked meta-logistic regression (9 OOF probability features). "
-            f"Person-level 60/20/20 split via pipeline.regular_split; split_seed={split_seed}."
+    _title_left(
+        ax,
+        (
+            "Figure 1 — Compare models on held-out test (final stacking, model A)",
+            "Bars: accuracy vs macro-F1 for LR, NB, RF, majority vote, stacking",
+            f"Person-level 60/20/20 split · regular_split seed = {split_seed}",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -106,7 +102,7 @@ def figure_confusion_matrix(
     cm: np.ndarray, class_names: list[str], path: Path, split_seed: int
 ) -> None:
     short = _short_labels(class_names)
-    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+    fig, ax = plt.subplots(figsize=(5.2, 5.0))
     im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
     ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     ax.set(
@@ -116,7 +112,6 @@ def figure_confusion_matrix(
         yticklabels=short,
         ylabel="True class",
         xlabel="Predicted class",
-        title="Stacking classifier — row = true label, column = prediction",
     )
     plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     thresh = cm.max() / 2.0 if cm.size else 0
@@ -130,16 +125,16 @@ def figure_confusion_matrix(
                 va="center",
                 color="white" if cm[i, j] > thresh else "black",
             )
-    _finish_figure(
-        fig,
-        suptitle="Figure 2 — Confusion matrix for stacked meta-model (test set)",
-        caption=(
-            f"Caption: Counts of (true, predicted) pairs for the final stacking model on held-out test rows; "
-            f"diagonal = correct. Off-diagonals show which classes are confused (e.g. Starry Night vs others). "
-            f"split_seed={split_seed}, person-level split."
+    _title_left(
+        ax,
+        (
+            "Figure 2 — Confusion matrix: stacking on test set",
+            "Rows = true class, columns = predicted class (counts)",
+            f"Person-level split · regular_split seed = {split_seed}",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -157,52 +152,50 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
         return
     preds_on_sn = pred[mask]
     counts = np.bincount(preds_on_sn, minlength=len(names))
-    fig, ax = plt.subplots(figsize=(7, 4.5))
+    fig, ax = plt.subplots(figsize=(6, 4.5))
     ax.bar(short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))])
-    ax.set_ylabel("Number of test rows")
-    ax.set_title('Subset: ground truth = "The Starry Night" only')
+    ax.set_ylabel("Test row count")
     ax.grid(axis="y", alpha=0.3)
-    _finish_figure(
-        fig,
-        suptitle="Figure 3 — Error analysis: predictions when true class is Starry Night",
-        caption=(
-            f"Caption: Among test rows whose true painting is *The Starry Night*, bar height shows how often "
-            f"the stacking model predicted each class. Highlights the most confused target class. "
-            f"split_seed={split_seed}."
+    _title_left(
+        ax,
+        (
+            "Figure 3 — When truth is “The Starry Night”: what stacking predicts",
+            "Bar height = how often each predicted label (same test fold as Fig. 1–2)",
+            f"regular_split seed = {split_seed}",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
 def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
-    ax.set_xlabel("Person-level split seed (pipeline.regular_split)")
-    ax.set_ylabel("Test accuracy (stacking, model A)")
-    ax.set_title("Same hyperparameters; only the train/val/test person split changes")
+    ax.set_xlabel("Person-level split seed (regular_split)")
+    ax.set_ylabel("Stacking test accuracy (model A)")
     ax.grid(True, alpha=0.3)
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
     ax.axhline(np.mean(accs), color="green", linestyle=":", alpha=0.8, label=f"mean={np.mean(accs):.4f}")
     ax.legend(loc="lower right")
     seed_list = ", ".join(str(s) for s in seeds)
-    _finish_figure(
-        fig,
-        suptitle="Figure 4 — Test accuracy vs split seed (stability of final model A)",
-        caption=(
-            f"Caption: Each point retrains the full stacking pipeline with a different random seed for "
-            f"person-level 60/20/20 splitting; horizontal lines show min and mean test accuracy over seeds "
-            f"[{seed_list}]. Supports reporting a performance range, not a single lucky split."
+    _title_left(
+        ax,
+        (
+            "Figure 4 — Same model, different train/val/test person splits",
+            f"Seeds: {seed_list}",
+            "Dashed = min accuracy · dotted = mean · fixed hyperparameters",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
 def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
     x = np.arange(len(summary))
     w = 0.25
     ax.bar(x - w, summary["min"], width=w, label="min")
@@ -211,19 +204,24 @@ def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels(summary["model"], rotation=15, ha="right")
     ax.set_ylabel("Test accuracy")
-    ax.set_title("Same six split seeds for every model variant")
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
-    _finish_figure(
-        fig,
-        suptitle="Figure 5 — Appendix: min / mean / max test accuracy across split seeds",
-        caption=(
-            "Caption: Summary over the same person-level split seeds for final model A vs exploratory "
-            "variants B (multiseed meta features) and C (RF probability averaging). "
-            "Run report_figures.py --appendix to include B and C in this chart."
+    n = len(summary)
+    mid = (
+        "Same six person-level seeds per model"
+        if n > 1
+        else "Model A only — use --appendix to add variants B and C"
+    )
+    _title_left(
+        ax,
+        (
+            "Figure 5 — Appendix: min / mean / max test accuracy",
+            mid,
+            f"{n} model variant(s)",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
