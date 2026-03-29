@@ -8,26 +8,25 @@ PNG plots and CSV tables are written to ``./plots/`` (created automatically).
 
 Usage (repository root, ``training_data.csv`` present)::
 
-    python report_figures.py              # seed 42 plots + 6-seed stability (model A)
-    python report_figures.py --appendix   # also B/C over 6 seeds (slow)
+    python report_figures.py              # default partition seed 42 + six-seed sweep
+    python report_figures.py --appendix   # extra bar chart over alternative setups (slow)
 
 **Outputs (rubric mapping)**
 
 ``plots/01_model_compare_test.png``
-    Bar chart: test accuracy + macro-F1 for LR, NB, RF, majority vote, stacking (model A).
+    Bar chart: held-out test accuracy and macro-F1 for LR, NB, RF, majority vote, stacking.
 
 ``plots/02_confusion_matrix_stacking.png``
-    Confusion matrix heatmap (stacking, held-out 20% test, default split seed 42).
+    Confusion matrix for stacked classifier on held-out 20% test.
 
 ``plots/03_errors_true_starry_night.png``
-    When true class is *The Starry Night*, bar chart of predicted labels.
+    True class Starry Night: distribution of predicted labels on held-out test.
 
-``plots/04_stability_model_A_split_seeds.png``
-    Test accuracy vs person-level split seed (6 seeds) for model A.
+``plots/04_partition_seed_sensitivity.png``
+    Stacking test accuracy vs RNG seed used to shuffle persons before 80/20 split.
 
 ``plots/05_appendix_model_compare_min_mean_max.csv``
-    Min / mean / max test accuracy. With ``--appendix``, includes models B and C;
-    also writes ``plots/05_appendix_model_compare.png``. Without ``--appendix``, model A only.
+    Min/mean/max table; ``--appendix`` adds extra rows and ``05_appendix_model_compare.png``.
 """
 from __future__ import annotations
 
@@ -76,21 +75,27 @@ def figure_model_compare(r: dict, path: Path, split_seed: int) -> None:
     ]
     x = np.arange(len(names))
     w = 0.35
-    fig, ax = plt.subplots(figsize=(7, 4.8))
-    ax.bar(x - w / 2, accs, width=w, label="Accuracy")
-    ax.bar(x + w / 2, f1s, width=w, label="Macro F1")
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    bars_acc = ax.bar(x - w / 2, accs, width=w, label="Accuracy")
+    bars_f1 = ax.bar(x + w / 2, f1s, width=w, label="Macro F1 (class-average)")
     ax.set_xticks(x)
     ax.set_xticklabels(names)
-    ax.set_ylim(0, 1.05)
+    ax.set_ylim(0, 1.08)
     ax.set_ylabel("Score")
-    ax.legend()
+    ax.legend(loc="lower right")
     ax.grid(axis="y", alpha=0.3)
+    # Macro-F1 can track accuracy closely on balanced 3-class data — show numeric values on bars.
+    try:
+        ax.bar_label(bars_acc, fmt="%.4f", fontsize=5, padding=2)
+        ax.bar_label(bars_f1, fmt="%.4f", fontsize=5, padding=2)
+    except AttributeError:
+        pass
     _title_left(
         ax,
         (
-            "Figure 1 — Compare models on held-out test (final stacking, model A)",
-            "Bars: accuracy vs macro-F1 for LR, NB, RF, majority vote, stacking",
-            f"Person-level 60/20/20 split · regular_split seed = {split_seed}",
+            "Figure 1 — Held-out test: accuracy vs macro-F1",
+            "LR, NB, RF, majority vote, stacked meta-classifier",
+            f"80% persons train+val / 20% test · partition RNG seed {split_seed}",
         ),
     )
     fig.tight_layout()
@@ -159,9 +164,9 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     _title_left(
         ax,
         (
-            "Figure 3 — When truth is “The Starry Night”: what stacking predicts",
-            "Bar height = how often each predicted label (same test fold as Fig. 1–2)",
-            f"regular_split seed = {split_seed}",
+            "Figure 3 — True class: The Starry Night (held-out test)",
+            "How often stacking predicts each class for those rows",
+            f"Same 80/20 partition as Figures 1–2 · seed {split_seed}",
         ),
     )
     fig.tight_layout()
@@ -171,10 +176,10 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
 
 def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
-    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
-    ax.set_xlabel("Person-level split seed (regular_split)")
-    ax.set_ylabel("Stacking test accuracy (model A)")
+    ax.set_xlabel("RNG seed (shuffle persons, then 80/20 train+val vs test)")
+    ax.set_ylabel("Stacking accuracy on 20% held-out test")
     ax.grid(True, alpha=0.3)
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
@@ -184,9 +189,9 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     _title_left(
         ax,
         (
-            "Figure 4 — Same model, different train/val/test person splits",
-            f"Seeds: {seed_list}",
-            "Dashed = min accuracy · dotted = mean · fixed hyperparameters",
+            "Figure 4 — Sensitivity to train/test partition",
+            f"Seeds tried: {seed_list}",
+            "Same hyperparameters; only the person shuffle before splitting changes",
         ),
     )
     fig.tight_layout()
@@ -208,16 +213,16 @@ def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
     n = len(summary)
     mid = (
-        "Same six person-level seeds per model"
+        "Six partition seeds per configuration (same protocol as Fig. 4)"
         if n > 1
-        else "Model A only — use --appendix to add variants B and C"
+        else "Default run: submitted stacking only (see --appendix for comparisons)"
     )
     _title_left(
         ax,
         (
-            "Figure 5 — Appendix: min / mean / max test accuracy",
+            "Figure 5 — Test accuracy: min, mean, max over partition seeds",
             mid,
-            f"{n} model variant(s)",
+            f"{n} configuration(s)",
         ),
     )
     fig.tight_layout()
@@ -308,14 +313,14 @@ def main() -> None:
     print(f"Wrote {PLOT_DIR / '03_errors_true_starry_night.png'}")
 
     rows_a: list[tuple[int, float]] = []
-    print("Stability sweep model A over seeds", SPLIT_SEEDS_DEFAULT)
+    print("Partition-seed sweep over seeds", SPLIT_SEEDS_DEFAULT)
     for sd in SPLIT_SEEDS_DEFAULT:
         rr = run_stacking_eval(split_seed=sd, verbose=False)
         rows_a.append((sd, rr["acc_stack"]))
         print(f"  seed {sd}: acc_stack={rr['acc_stack']:.4f}")
 
-    figure_stability_seeds(rows_a, PLOT_DIR / "04_stability_model_A_split_seeds.png")
-    print(f"Wrote {PLOT_DIR / '04_stability_model_A_split_seeds.png'}")
+    figure_stability_seeds(rows_a, PLOT_DIR / "04_partition_seed_sensitivity.png")
+    print(f"Wrote {PLOT_DIR / '04_partition_seed_sensitivity.png'}")
 
     summary_rows = [
         {

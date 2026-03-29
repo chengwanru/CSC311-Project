@@ -72,7 +72,7 @@ Suggested **code.zip** contents: `pred.py`, `export_model.py`, `stacking_ensembl
 Install optional dependency: `pip install -r requirements-figures.txt`
 
 ```bash
-# Default split seed + stability over 6 person-level split seeds (model A)
+# Default partition seed 42 + six-seed sensitivity (same as Fig. 4 protocol)
 python report_figures.py
 
 # Also evaluate appendix B & C over the same seeds (slow)
