@@ -20,7 +20,7 @@ Usage (repository root, ``training_data.csv`` present)::
     Confusion matrix for stacked classifier on the 20% test set.
 
 ``plots/03_errors_true_starry_night.png``
-    True class Starry Night: **counts** of predicted label (not %); legend = correct vs wrong.
+    Starry Night test rows: mostly correct; blue bars show rare mistakes and confused-into class.
 
 ``plots/04_partition_seed_sensitivity.png``
     Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
@@ -202,14 +202,14 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
         pass
     top = float(counts.max()) if len(counts) else 0.0
     ax.set_ylim(0, max(top * 1.15, top + 1.0))
+    pct_ok = 100.0 * n_ok / n_sub if n_sub else 0.0
     _figure_label_below(
         fig,
         (
-            "Figure 3 — Only rows whose true class is The Starry Night (test set)",
-            "Each bar: how many of those rows were predicted as that label (absolute counts)",
-            f"Summary: {n_ok} correct, {n_wrong} wrong, out of {n_sub} rows",
-            "Same split as Figures 1–2",
-            f"Seed {split_seed}",
+            "Figure 3 — True class The Starry Night: where predictions land (test set)",
+            "Red bar = correct (usually tallest); blue = rare wrong labels (which class confused)",
+            f"{n_ok}/{n_sub} correct ({pct_ok:.1f}%), {n_wrong} mistake(s) total — counts, not %",
+            f"Same split as Figures 1–2 · Seed {split_seed}",
         ),
     )
     fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
