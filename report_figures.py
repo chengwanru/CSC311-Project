@@ -20,10 +20,10 @@ Usage (repository root, ``training_data.csv`` present)::
     Confusion matrix for stacked classifier on the 20% test set.
 
 ``plots/03_errors_true_starry_night.png``
-    True class Starry Night: distribution of predicted labels on the test set.
+    True class Starry Night: predicted-label counts on the test set; integer on each bar.
 
 ``plots/04_partition_seed_sensitivity.png``
-    Stacking **test accuracy** (fraction correct) vs random seed; numeric label on each point.
+    Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
 
 ``plots/05_appendix_model_compare_min_mean_max.csv``
     Min/mean/max table; ``--appendix`` adds extra rows and ``05_appendix_model_compare.png``.
@@ -169,9 +169,17 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     preds_on_sn = pred[mask]
     counts = np.bincount(preds_on_sn, minlength=len(names))
     fig, ax = plt.subplots(figsize=(6, 4.5))
-    ax.bar(short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))])
+    bars = ax.bar(
+        short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))]
+    )
     ax.set_ylabel("Test row count")
     ax.grid(axis="y", alpha=0.3)
+    try:
+        ax.bar_label(bars, labels=[str(int(c)) for c in counts], fontsize=8, padding=2)
+    except AttributeError:
+        pass
+    top = float(counts.max()) if len(counts) else 0.0
+    ax.set_ylim(0, max(top * 1.15, top + 1.0))
     _figure_label_below(
         fig,
         (
@@ -187,24 +195,11 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
 
 def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
-    seeds = list(seeds)
-    accs = list(accs)
     fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
     ax.set_xlabel("Random seed (80/20 train+val vs test, same protocol each run)")
-    ax.set_ylabel("Test accuracy (fraction correct, not error rate)")
-    ax.set_ylim(min(accs) - 0.04, max(accs) + 0.06)
+    ax.set_ylabel("Stacking accuracy on 20% test set")
     ax.grid(True, alpha=0.3)
-    for sd, acc in zip(seeds, accs):
-        ax.annotate(
-            f"{acc:.4f}",
-            (sd, acc),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-            fontweight="bold",
-        )
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
     ax.axhline(np.mean(accs), color="green", linestyle=":", alpha=0.8, label=f"mean={np.mean(accs):.4f}")
@@ -215,7 +210,6 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
         (
             "Figure 4 — Stacking test accuracy vs random seed",
             f"Seeds: {seed_list}",
-            "Each point: share of correct predictions on the 20% test set",
             "Hyperparameters fixed; only the random train/test split changes",
         ),
     )
