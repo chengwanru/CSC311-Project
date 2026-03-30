@@ -2,6 +2,16 @@
 
 This branch matches the **course submission layout** (Winter 2026 CSC311 project instructions): MarkUs **prediction** (`pred.py` + small artifacts), **report** (`report.pdf` + `code.zip` evidence).
 
+## Repository layout (by folder)
+
+| Location | What it is |
+| -------- | ---------- |
+| **`submission/`** | **Everything you upload to MarkUs**, in one place: prediction trio, contents for `code.zip`, and a slot for `report.pdf`. Sync from root with `python submission/sync_submission.py` (after `export_model.py`). See **`submission/README.md`**. |
+| **`appendix_code/`** | Appendix-only code (other models / experiments). Not imported by `pred.py`; include in **`code.zip`** if the report references it. |
+| **`plots/`** | Report figures and CSVs from `report_figures.py`, plus **`plots/README.md`** as a short index. |
+| **`.mplconfig/`** | Local matplotlib cache/config from plotting; not part of the hand-in. |
+| **Repo root** | Main `.py` modules, `training_data.csv`, `requirements-figures.txt`, `LICENSE`, `.gitignore`. **`export_model.py`** writes **`model_state.json`** and **`model_weights.npz`** here (and `sync` copies them into `submission/`). Any other loose `*.npz` / `*.json` at root are usually old or optional leftovers, not required for MarkUs unless you actively use them. |
+
 ## Final model choice (**model A**)
 
 The **submitted** classifier is **stacking model A**: fixed hyperparameters, three base models (LR, NB/CNB blend, RF), **9-dimensional** OOF meta-features, meta logistic regression **C = 0.5** — implemented in `stacking_ensemble.py` (evaluation) and `export_model.py` (full-data train for `pred.py`).
@@ -52,6 +62,15 @@ We use **stacking**: three base classifiers each output class probabilities; a *
 ---
 
 ## What to submit (per course instructions)
+
+Hand-in copies are staged under **`submission/`** (see **`submission/README.md`**). From repo root:
+
+```bash
+python export_model.py
+python submission/sync_submission.py
+```
+
+Then upload from **`submission/01_prediction_markus/`**, zip **`submission/02_report_code_zip/`** → `code.zip`, and place **`report.pdf`** in **`submission/03_report_pdf/`** before uploading.
 
 **Prediction assignment (MarkUs)**
 

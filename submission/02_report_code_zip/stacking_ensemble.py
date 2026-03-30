@@ -113,10 +113,7 @@ def _report(name, y_true, pred):
 
 
 def run_stacking_eval(
-    split_seed: Optional[int] = None,
-    *,
-    verbose: bool = True,
-    stacking_train_pool: str = "trainval",
+    split_seed: Optional[int] = None, *, verbose: bool = True
 ) -> Dict[str, Any]:
     """
     Train/evaluate the final stacking pipeline (model A) with a person-level split.
@@ -128,27 +125,21 @@ def run_stacking_eval(
         Default: ``pipeline.RANDOM_STATE`` (42).
     verbose
         If False, suppress printed progress (for batch runs, e.g. ``report_figures.py``).
-    stacking_train_pool
-        ``"trainval"`` (default): OOF + refit on **train ∪ val** (80% of people) — main pipeline.
-        ``"train"``: OOF + refit on **train only** (60% of people); same 20% test set.
-        Both use the same initial 60/20/20 person split; only the stacking pool changes.
 
     Returns
     -------
     dict with keys including ``y_test``, ``pred_stack``, ``pred_lr``, ``pred_nb``,
     ``pred_rf``, ``pred_maj``, per-model accuracies, ``macro_f1_stack``,
     ``confusion_matrix`` (3x3 int, true rows / pred cols), ``class_names``,
-    ``split_seed``, ``n_train``, ``n_val``, ``n_test``, ``stacking_train_pool``.
+    ``split_seed``, ``n_train``, ``n_val``, ``n_test``.
     """
     seed = RANDOM_STATE if split_seed is None else int(split_seed)
     out_cm = contextlib.nullcontext() if verbose else contextlib.redirect_stdout(io.StringIO())
     with out_cm:
-        return _run_stacking_eval_core(seed, stacking_train_pool=stacking_train_pool)
+        return _run_stacking_eval_core(seed)
 
 
-def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval") -> Dict[str, Any]:
-    if stacking_train_pool not in ("train", "trainval"):
-        raise ValueError('stacking_train_pool must be "train" or "trainval"')
+def _run_stacking_eval_core(seed: int) -> Dict[str, Any]:
     df_clean = clean(pd.read_csv(CSV_PATH))
 
     train_df, val_df, test_df = regular_split(df_clean, random_state=seed)
@@ -173,15 +164,9 @@ def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval")
 
     classes = state["classes"]
     K = len(classes)
-    if stacking_train_pool == "trainval":
-        n_tv = len(train_df) + len(val_df)
-        pool_label = "80% train+val"
-    else:
-        n_tv = len(train_df)
-        pool_label = "60% train only"
+    n_tv = len(train_df) + len(val_df)
     print("Classes:", classes)
     print(f"Train / val / test rows  : {len(train_df)} / {len(val_df)} / {len(test_df)}")
-    print(f"Stacking OOF+refit pool  : {pool_label} ({n_tv} rows)")
     print(f"LR/RF feature dim        : {X_train.shape[1]}")
     print(f"NB feature dim           : {X_nb_train.shape[1]}")
     print(
@@ -190,25 +175,18 @@ def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval")
         f"meta C={META_C}"
     )
 
-    if stacking_train_pool == "trainval":
-        df_tv = pd.concat([train_df, val_df], ignore_index=True)
-        X_tv = np.vstack([X_train, X_val])
-        y_tv = np.concatenate([y_train, y_val])
-        X_nb_tv = np.vstack([X_nb_train, X_nb_val])
-        y_nb_tv = np.concatenate(
-            [
-                np.array([class_to_idx[c] for c in train_df["Painting"]]),
-                np.array([class_to_idx[c] for c in val_df["Painting"]]),
-            ]
-        )
-    else:
-        df_tv = train_df
-        X_tv = X_train
-        y_tv = y_train
-        X_nb_tv = X_nb_train
-        y_nb_tv = np.array([class_to_idx[c] for c in train_df["Painting"]])
+    df_tv = pd.concat([train_df, val_df], ignore_index=True)
+    X_tv = np.vstack([X_train, X_val])
+    y_tv = np.concatenate([y_train, y_val])
+    X_nb_tv = np.vstack([X_nb_train, X_nb_val])
+    y_nb_tv = np.concatenate(
+        [
+            np.array([class_to_idx[c] for c in train_df["Painting"]]),
+            np.array([class_to_idx[c] for c in val_df["Painting"]]),
+        ]
+    )
 
-    print(f"\n[Stage 2] OOF prediction generation on {n_tv}-row {pool_label} pool...")
+    print(f"\n[Stage 2] OOF prediction generation on {n_tv}-row trainval pool...")
 
     rng = np.random.RandomState(seed)
     tv_ids = df_tv["unique_id"].unique()
@@ -256,7 +234,7 @@ def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval")
         rf_f.fit(X_tv[tr_mask], y_tv[tr_mask])
         oof_rf[vl_mask] = rf_f.predict_proba(X_tv[vl_mask])
 
-    print(f"\n--- OOF base model performance ({n_tv} stacking-pool rows) ---")
+    print(f"\n--- OOF base model performance ({n_tv} trainval rows) ---")
     _report("LR  (OOF)", y_tv, np.argmax(oof_lr, axis=1))
     _report("NB  (OOF)", y_tv, np.argmax(oof_nb, axis=1))
     _report("RF  (OOF)", y_tv, np.argmax(oof_rf, axis=1))
@@ -278,7 +256,7 @@ def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval")
     for i, cname in enumerate(short_cls):
         print(f"  {cname:18s}" + "".join(f"{coef[i, j]:>10.3f}" for j in range(9)))
 
-    print(f"\n[Stage 4] Refit bases on {pool_label}, evaluate on held-out 20% test...")
+    print(f"\n[Stage 4] Refit bases on 80%, evaluate on held-out 20% test...")
 
     lr80 = LogisticRegression(
         max_iter=2500,
@@ -373,7 +351,6 @@ def _run_stacking_eval_core(seed: int, *, stacking_train_pool: str = "trainval")
         "n_train": len(train_df),
         "n_val": len(val_df),
         "n_test": len(test_df),
-        "stacking_train_pool": stacking_train_pool,
     }
 
 

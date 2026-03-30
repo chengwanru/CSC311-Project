@@ -26,19 +26,7 @@ Usage (repository root, ``training_data.csv`` present)::
     Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
 
 ``plots/05_appendix_model_compare_min_mean_max.csv``
-    Min/mean/max (numeric).
-
-``plots/05_appendix_model_compare_min_mean_max.png``
-    Table image: **Min / Mean / Max** only (no model column) plus caption; CSV keeps model keys.
-
-``plots/05_appendix_model_compare.png``
-    Optional bar chart if you run with ``--appendix`` (extra models).
-
-``plots/06_confusion_matrix_baselines.png``
-    One figure with 4 confusion matrices (LR/NB/RF/Majority) on the same test split.
-
-``plots/07_stacking_train60_vs_trainval80.png``
-    Grouped bars: stacking test accuracy when OOF+refit uses **60% train only** vs **80% train+val** (same 20% test).
+    Min/mean/max table; ``--appendix`` adds extra rows and ``05_appendix_model_compare.png``.
 """
 from __future__ import annotations
 
@@ -47,7 +35,6 @@ import importlib.util
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
 from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
@@ -58,47 +45,20 @@ SPLIT_SEEDS_DEFAULT = [1, 7, 13, 21, 42, 84]
 PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 
-def _figure_label_below(
-    fig,
-    lines: tuple[str, ...],
-    *,
-    right: float | None = None,
-    label_below_axes: float = 0.058,
-    caption_gap: float = 0.018,
-) -> None:
-    """Place caption in the figure margin below x-axis ticks/labels (aligned with axes bottom)."""
-    n = max(len(lines), 1)
-    bottom_pad = 0.024
-    line_h = 0.024
-    cap_h = line_h * (1.0 + 0.92 * (n - 1))
-    strip = bottom_pad + cap_h + caption_gap + label_below_axes
-    strip = float(np.clip(strip, 0.12, 0.34))
-    y_top = strip - label_below_axes - caption_gap
-    kw: dict = dict(bottom=strip, top=0.97)
-    if right is not None:
-        kw["right"] = right
-    fig.subplots_adjust(**kw)
+def _figure_label_below(fig, lines: tuple[str, ...]) -> None:
+    """Multi-line figure title under the axes (reserve bottom margin first)."""
+    fig.tight_layout(rect=[0, 0.26, 1, 0.98])
     fig.text(
         0.5,
-        y_top,
+        0.02,
         "\n".join(lines),
         ha="center",
-        va="top",
+        va="bottom",
         fontsize=10,
         fontweight="bold",
         transform=fig.transFigure,
-        linespacing=1.08,
+        linespacing=1.35,
     )
-
-
-def _model_display_name(raw: str) -> str:
-    """Short label for table/figures (CSV keeps full ``model`` string)."""
-    key = raw.strip()
-    return {
-        "A_stacking_fixed_hparams": "Model A",
-        "B_multiseed_meta45": "Model B",
-        "C_RF_avg_meta9": "Model C",
-    }.get(key, key[:18] + ("…" if len(key) > 18 else ""))
 
 
 def _short_labels(names: list[str]) -> list[str]:
@@ -145,12 +105,13 @@ def figure_model_compare(r: dict, path: Path, split_seed: int) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 1 — Test accuracy and macro-F1",
-            "LR, NB, RF, majority vote, stacking",
-            f"80/20 split (respondent-level) · seed {split_seed}",
+            "Figure 1 — Test set: accuracy vs macro-F1",
+            "LR, NB, RF, majority vote, stacked meta-classifier",
+            "Split: 80% respondents train+val, 20% test set",
+            f"Seed {split_seed}",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -158,7 +119,7 @@ def figure_confusion_matrix(
     cm: np.ndarray, class_names: list[str], path: Path, split_seed: int
 ) -> None:
     short = _short_labels(class_names)
-    fig, ax = plt.subplots(figsize=(5.2, 5.55))
+    fig, ax = plt.subplots(figsize=(5.2, 5.0))
     im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
     ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     ax.set(
@@ -167,9 +128,9 @@ def figure_confusion_matrix(
         xticklabels=short,
         yticklabels=short,
         ylabel="True class",
-        xlabel="",
+        xlabel="Predicted class",
     )
-    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     thresh = cm.max() / 2.0 if cm.size else 0
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
@@ -184,14 +145,13 @@ def figure_confusion_matrix(
     _figure_label_below(
         fig,
         (
-            "Figure 2 — Confusion matrix (test set, counts)",
-            "Rows: true class · columns: predicted class",
-            f"80/20 split · seed {split_seed}",
+            "Figure 2 — Confusion matrix (stacked classifier, test set)",
+            "Rows: true class, columns: predicted class (counts)",
+            "Split: 80% respondents train+val, 20% test set",
+            f"Seed {split_seed}",
         ),
-        right=0.88,
-        label_below_axes=0.158,
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -216,7 +176,7 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     bars = ax.bar(
         short, counts, color=["#4a90d9" if i != sn_i else "#e94b3c" for i in range(len(names))]
     )
-    ax.set_ylabel("Count (test rows)")
+    ax.set_ylabel("Number of test rows (counts, not %)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(
         handles=[
@@ -224,13 +184,13 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
                 facecolor="#e94b3c",
                 edgecolor="#333333",
                 linewidth=0.4,
-                label="Correct",
+                label="Correct (predicted Starry Night)",
             ),
             Patch(
                 facecolor="#4a90d9",
                 edgecolor="#333333",
                 linewidth=0.4,
-                label="Wrong class",
+                label="Wrong (predicted another class)",
             ),
         ],
         loc="upper right",
@@ -246,98 +206,22 @@ def figure_starry_night_errors(r: dict, path: Path, split_seed: int) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 3 — True class: The Starry Night (predicted label counts)",
-            f"Red = correct · blue = other class · {n_ok}/{n_sub} correct ({pct_ok:.1f}%)",
-            f"Same split as Figs. 1–2 · seed {split_seed}",
+            "Figure 3 — True class The Starry Night: where predictions land (test set)",
+            "Red bar = correct (usually tallest); blue = rare wrong labels (which class confused)",
+            f"{n_ok}/{n_sub} correct ({pct_ok:.1f}%), {n_wrong} mistake(s) total — counts, not %",
+            f"Same split as Figures 1–2 · Seed {split_seed}",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
-def figure_confusion_matrix_baselines(r: dict, path: Path, split_seed: int) -> None:
-    """2x2 confusion matrices for LR/NB/RF/Majority on the same held-out test set."""
-    y = np.asarray(r["y_test"])
-    class_names = _short_labels(r["class_names"])
-    models = [
-        ("LR", np.asarray(r["pred_lr"])),
-        ("NB", np.asarray(r["pred_nb"])),
-        ("RF", np.asarray(r["pred_rf"])),
-        ("Majority", np.asarray(r["pred_maj"])),
-    ]
-
-    cms = []
-    for _, pred in models:
-        cm = np.zeros((3, 3), dtype=int)
-        for i in range(3):
-            for j in range(3):
-                cm[i, j] = int(np.sum((y == i) & (pred == j)))
-        cms.append(cm)
-
-    vmax = max(int(cm.max()) for cm in cms) if cms else 1
-    fig, axes = plt.subplots(2, 2, figsize=(9.4, 8.4), sharex=True, sharey=True)
-    axes = axes.ravel()
-    im = None
-    for ax, (name, _), cm in zip(axes, models, cms):
-        im = ax.imshow(cm, interpolation="nearest", cmap="Blues", vmin=0, vmax=vmax)
-        ax.set_xticks(np.arange(3))
-        ax.set_yticks(np.arange(3))
-        ax.set_xticklabels(class_names, rotation=25, ha="right")
-        ax.set_yticklabels(class_names)
-        thresh = cm.max() / 2.0 if cm.size else 0
-        for i in range(3):
-            for j in range(3):
-                ax.text(
-                    j,
-                    i,
-                    format(cm[i, j], "d"),
-                    ha="center",
-                    va="center",
-                    color="white" if cm[i, j] > thresh else "black",
-                    fontsize=10,
-                )
-        # Panel label (not subplot title) to identify model.
-        ax.text(
-            0.02,
-            0.98,
-            name,
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=11,
-            fontweight="bold",
-            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="#999999", alpha=0.9),
-        )
-
-    for ax in axes[2:]:
-        ax.set_xlabel("Predicted class")
-    for ax in (axes[0], axes[2]):
-        ax.set_ylabel("True class")
-
-    if im is not None:
-        cbar = fig.colorbar(im, ax=axes.tolist(), fraction=0.03, pad=0.06)
-        cbar.set_label("Count")
-
-    _figure_label_below(
-        fig,
-        (
-            "Figure 6 — Confusion matrices on test set: LR, NB, RF, and majority vote",
-            "Rows: true class · columns: predicted class (same split as Figure 1)",
-            f"80/20 split · seed {split_seed}",
-        ),
-        right=0.86,
-        label_below_axes=0.13,
-    )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
 def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     seeds, accs = zip(*rows)
-    fig, ax = plt.subplots(figsize=(6.5, 5.1))
+    fig, ax = plt.subplots(figsize=(6.5, 4.8))
     ax.plot(seeds, accs, "o-", linewidth=2, markersize=8)
-    ax.set_xlabel("Random seed")
-    ax.set_ylabel("Test accuracy")
+    ax.set_xlabel("Random seed (80/20 train+val vs test, same protocol each run)")
+    ax.set_ylabel("Stacking accuracy on 20% test set")
     ax.grid(True, alpha=0.3)
     m = min(accs)
     ax.axhline(m, color="gray", linestyle="--", alpha=0.7, label=f"min={m:.4f}")
@@ -347,120 +231,12 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     _figure_label_below(
         fig,
         (
-            "Figure 4 — Test accuracy vs random partition seed",
-            f"Seeds: {seed_list} · 80/20 split each run",
-            "Fixed hyperparameters",
+            "Figure 4 — Stacking test accuracy vs random seed",
+            f"Seeds: {seed_list}",
+            "Hyperparameters fixed; only the random train/test split changes",
         ),
-        label_below_axes=0.132,
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
-def figure_stacking_pool_compare(rows: list[tuple[int, float, float]], path: Path) -> None:
-    """Grouped bars: (seed, acc_stack with 60% train pool, acc_stack with 80% train+val pool)."""
-    seeds = [r[0] for r in rows]
-    acc60 = [r[1] for r in rows]
-    acc80 = [r[2] for r in rows]
-    fig, ax = plt.subplots(figsize=(8.0, 5.0))
-    x = np.arange(len(seeds))
-    w = 0.36
-    ax.bar(
-        x - w / 2,
-        acc60,
-        width=w,
-        label="Stacking: OOF+refit on 60% train only",
-        color="#6baed6",
-    )
-    ax.bar(
-        x + w / 2,
-        acc80,
-        width=w,
-        label="Stacking: OOF+refit on 80% (train+val)",
-        color="#2171b5",
-    )
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(s) for s in seeds])
-    lo = min(min(acc60), min(acc80)) - 0.02
-    hi = min(1.0, max(max(acc60), max(acc80)) + 0.02)
-    ax.set_ylim(max(0.0, lo), hi)
-    ax.set_xlabel("Partition seed (person-level 60/20/20 split)")
-    ax.set_ylabel("Test accuracy (same 20% hold-out)")
-    ax.legend(loc="lower right", fontsize=9)
-    ax.grid(axis="y", alpha=0.3)
-    for i in range(len(seeds)):
-        ax.text(i - w / 2, acc60[i] + 0.003, f"{acc60[i]:.3f}", ha="center", va="bottom", fontsize=7)
-        ax.text(i + w / 2, acc80[i] + 0.003, f"{acc80[i]:.3f}", ha="center", va="bottom", fontsize=7)
-    seed_list = ", ".join(str(s) for s in seeds)
-    _figure_label_below(
-        fig,
-        (
-            "Figure 7 — Stacking test accuracy: 60% train pool vs 80% (train+val) pool",
-            "Same initial split and 20% test; val rows included only in the right-hand bars",
-            f"Seeds: {seed_list} · fixed hyperparameters",
-        ),
-        label_below_axes=0.145,
-    )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
-def figure_min_mean_max_table(df: pd.DataFrame, path: Path) -> None:
-    """Render min/mean/max as a PNG table (no model column; CSV still has full keys)."""
-    nrows = len(df)
-    fig_w, row_h = 5.2, 0.52
-    fig_h = 0.95 + row_h * (nrows + 1) + 0.95
-    fig = plt.figure(figsize=(fig_w, fig_h), facecolor="white")
-    gs = gridspec.GridSpec(2, 1, figure=fig, height_ratios=[1, 0.48], hspace=0.36)
-    ax = fig.add_subplot(gs[0])
-    ax.axis("off")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-
-    col_labels = ["Min", "Mean", "Max"]
-    cell_text = [
-        [f"{row['min']:.4f}", f"{row['mean']:.4f}", f"{row['max']:.4f}"]
-        for _, row in df.iterrows()
-    ]
-    col_w = (0.31, 0.31, 0.31)
-    table = ax.table(
-        cellText=cell_text,
-        colLabels=col_labels,
-        loc="center",
-        cellLoc="center",
-        colWidths=col_w,
-        bbox=[0.02, 0.02, 0.96, 0.96],
-    )
-    table.scale(1, 2.05)
-    table.auto_set_font_size(False)
-    table.set_fontsize(11)
-    for (r, c), cell in table.get_celld().items():
-        cell.set_edgecolor("#1a1a1a")
-        cell.set_linewidth(1.0)
-        if r == 0:
-            cell.set_facecolor("#1e3a5f")
-            cell.set_text_props(color="white", fontweight="bold", fontsize=11)
-        else:
-            cell.set_facecolor("#eef2f7" if r % 2 else "#ffffff")
-            cell.set_text_props(color="#111111", fontsize=11, fontfamily="monospace")
-    ax_cap = fig.add_subplot(gs[1])
-    ax_cap.axis("off")
-    cap = (
-        "Figure 5 — Test accuracy: min, mean, max (six partition seeds)\n"
-        "Same protocol as Figure 4"
-    )
-    ax_cap.text(
-        0.5,
-        0.92,
-        cap,
-        ha="center",
-        va="top",
-        fontsize=10,
-        fontweight="bold",
-        linespacing=1.1,
-        transform=ax_cap.transAxes,
-    )
-    fig.savefig(path, dpi=200, bbox_inches="tight", pad_inches=0.14)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -472,11 +248,7 @@ def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
     ax.bar(x, summary["mean"], width=w, label="mean")
     ax.bar(x + w, summary["max"], width=w, label="max")
     ax.set_xticks(x)
-    ax.set_xticklabels(
-        [_model_display_name(str(m)) for m in summary["model"]],
-        rotation=15,
-        ha="right",
-    )
+    ax.set_xticklabels(summary["model"], rotation=15, ha="right")
     ax.set_ylabel("Test accuracy")
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
@@ -489,12 +261,12 @@ def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
     _figure_label_below(
         fig,
         (
-            "Appendix — Test accuracy: min, mean, max (bar view)",
+            "Figure 5 — Test accuracy: min, mean, max over random seeds",
             mid,
             f"{n} configuration(s)",
         ),
     )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
 
 
@@ -576,29 +348,19 @@ def main() -> None:
         r["confusion_matrix"], r["class_names"], PLOT_DIR / "02_confusion_matrix_stacking.png", primary_seed
     )
     figure_starry_night_errors(r, PLOT_DIR / "03_errors_true_starry_night.png", primary_seed)
-    figure_confusion_matrix_baselines(r, PLOT_DIR / "06_confusion_matrix_baselines.png", primary_seed)
     print(f"Wrote {PLOT_DIR / '01_model_compare_test.png'}")
     print(f"Wrote {PLOT_DIR / '02_confusion_matrix_stacking.png'}")
     print(f"Wrote {PLOT_DIR / '03_errors_true_starry_night.png'}")
-    print(f"Wrote {PLOT_DIR / '06_confusion_matrix_baselines.png'}")
 
     rows_a: list[tuple[int, float]] = []
-    rows_pool: list[tuple[int, float, float]] = []
     print("Partition-seed sweep over seeds", SPLIT_SEEDS_DEFAULT)
     for sd in SPLIT_SEEDS_DEFAULT:
-        rr80 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="trainval")
-        rr60 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="train")
-        rows_a.append((sd, rr80["acc_stack"]))
-        rows_pool.append((sd, rr60["acc_stack"], rr80["acc_stack"]))
-        print(
-            f"  seed {sd}: stacking 60%-pool acc={rr60['acc_stack']:.4f}  "
-            f"80%-pool acc={rr80['acc_stack']:.4f}"
-        )
+        rr = run_stacking_eval(split_seed=sd, verbose=False)
+        rows_a.append((sd, rr["acc_stack"]))
+        print(f"  seed {sd}: acc_stack={rr['acc_stack']:.4f}")
 
     figure_stability_seeds(rows_a, PLOT_DIR / "04_partition_seed_sensitivity.png")
     print(f"Wrote {PLOT_DIR / '04_partition_seed_sensitivity.png'}")
-    figure_stacking_pool_compare(rows_pool, PLOT_DIR / "07_stacking_train60_vs_trainval80.png")
-    print(f"Wrote {PLOT_DIR / '07_stacking_train60_vs_trainval80.png'}")
 
     summary_rows = [
         {
@@ -629,10 +391,6 @@ def main() -> None:
     csv_path = PLOT_DIR / "05_appendix_model_compare_min_mean_max.csv"
     df.to_csv(csv_path, index=False)
     print(f"Wrote {csv_path}")
-
-    table_png = PLOT_DIR / "05_appendix_model_compare_min_mean_max.png"
-    figure_min_mean_max_table(df, table_png)
-    print(f"Wrote {table_png}")
 
     if args.appendix and len(summary_rows) > 1:
         figure_appendix_bar(df, PLOT_DIR / "05_appendix_model_compare.png")
