@@ -1,10 +1,10 @@
 """Feature column names matching preprocessing.transform_df X order (no pandas import)."""
 
 
-def feature_names_from_state(state):
+def feature_names_from_state(state, add_interactions=False):
     """
     Human-readable names for columns of X in the same order as transform_df
-    (numeric → likert → price → multi-hot room/who/season → TF-IDF).
+    (numeric → likert → [optional interactions] → multi-hot room/who/season → TF-IDF).
     """
     names = [
         "emotion_intensity",
@@ -14,8 +14,9 @@ def feature_names_from_state(state):
         "likert_content",
         "likert_calm",
         "likert_uneasy",
-        "log_price",
     ]
+    if add_interactions:
+        names.extend(["content_x_calm", "uneasy_x_sombre"])
     for c in state["room_cats"]:
         names.append(f"room:{c}")
     for c in state["who_cats"]:

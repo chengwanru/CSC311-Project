@@ -14,11 +14,12 @@ import pandas as pd
 import pickle
 import numpy as np
 from data_splitting import regular_split
-from preprocessing import clean, fit_preprocess, transform_df
+from preprocessing import COL_SEASON, COL_TARGET, clean, fit_preprocess, transform_df
 
 CSV_PATH = "training_data.csv"
 STATE_PATH = "preprocess_state.pkl"
 ARRAY_PATH = "preprocessed_arrays.npz"
+ARRAY_PATH_INTERACTIONS = "preprocessed_arrays_interactions.npz"
 
 def remove_blank_users(df):
     COL_ID = "unique_id"
@@ -58,6 +59,37 @@ def main():
     after = len(df_clean)
     print(f"  Removed {before - after} rows")
 
+    # SEASON x PAINTING FREQUENCIES (from cleaned data)
+    # Note: season responses can be comma-separated; count each token.
+    season_df = df_clean[[COL_TARGET, COL_SEASON]].copy()
+    season_df[COL_SEASON] = (
+        season_df[COL_SEASON]
+        .fillna("")
+        .astype(str)
+        .str.split(",")
+    )
+    season_df = season_df.explode(COL_SEASON, ignore_index=True)
+    season_df[COL_SEASON] = season_df[COL_SEASON].astype(str).str.strip()
+    season_df = season_df[season_df[COL_SEASON] != ""]
+
+    def normalize_season(s: str) -> str:
+        sl = s.strip().lower()
+        if sl.startswith("spr"):
+            return "Spring"
+        if sl.startswith("sum"):
+            return "Summer"
+        if sl.startswith("win"):
+            return "Winter"
+        if sl.startswith("fal") or sl.startswith("aut"):
+            return "Fall"
+        return s.strip().title()
+
+    season_df["Season"] = season_df[COL_SEASON].map(normalize_season)
+    freq = pd.crosstab(season_df["Season"], season_df[COL_TARGET])
+    freq = freq.reindex(["Spring", "Summer", "Fall", "Winter"]).fillna(0).astype(int)
+    print("\nSeason × Painting frequency table (cleaned data):")
+    print(freq.to_string())
+
     # SPLIT
     print("Splitting (60/20/20)...")
     train_df, val_df, test_df = regular_split(df_clean)
@@ -68,23 +100,36 @@ def main():
     state = fit_preprocess(train_df, max_features=6000, min_df=2)
 
     # TRANSFORM
-    print("Transforming train/val/test sets...")
-    X_train, y_train = transform_df(train_df, state)
-    X_val, y_val = transform_df(val_df, state)
-    X_test, y_test = transform_df(test_df, state)
+    print("Transforming train/val/test sets (baseline)...")
+    X_train, y_train = transform_df(train_df, state, add_interactions=False)
+    X_val, y_val = transform_df(val_df, state, add_interactions=False)
+    X_test, y_test = transform_df(test_df, state, add_interactions=False)
+
+    print("Transforming train/val/test sets (+ interactions)...")
+    X_train_i, y_train_i = transform_df(train_df, state, add_interactions=True)
+    X_val_i, y_val_i = transform_df(val_df, state, add_interactions=True)
+    X_test_i, y_test_i = transform_df(test_df, state, add_interactions=True)
 
     # SAVE STATE
     print("Saving state...")
     with open(STATE_PATH, "wb") as f:
         pickle.dump(state, f)
 
-    # SAVE ARRAYS
-    print("Saving preprocessed arrays...")
+    # SAVE ARRAYS (baseline)
+    print("Saving preprocessed arrays (baseline)...")
     np.savez(ARRAY_PATH,
              X_train=X_train, y_train=y_train,
              X_val=X_val, y_val=y_val,
              X_test=X_test, y_test=y_test)
-    print(f"\nDone! Saved {STATE_PATH} and {ARRAY_PATH}")
+
+    # SAVE ARRAYS (+ interactions)
+    print("Saving preprocessed arrays (+ interactions)...")
+    np.savez(ARRAY_PATH_INTERACTIONS,
+             X_train=X_train_i, y_train=y_train_i,
+             X_val=X_val_i, y_val=y_val_i,
+             X_test=X_test_i, y_test=y_test_i)
+
+    print(f"\nDone! Saved {STATE_PATH}, {ARRAY_PATH}, and {ARRAY_PATH_INTERACTIONS}")
 
 
 if __name__ == "__main__":

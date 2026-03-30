@@ -4,7 +4,6 @@ Safe merge of your original scripts.
 
 - Keeps your working pipeline intact
 - Adds per-painting imputation (stronger)
-- Adds log(price)
 - Keeps TF-IDF + multi-hot + scaling
 """
 
@@ -119,12 +118,6 @@ def fit_preprocess(train_df, max_features=6000, min_df=2):
             for p in paintings
         }
 
-    price = _extract_price(train_df[COL_PRICE])
-    state["price_median"] = {
-        p: price[train_df[COL_TARGET] == p].median()
-        for p in paintings
-    }
-
     # ---------- CLIPPING + SCALING ----------
     num_data = []
     for col in NUMERIC_COLS:
@@ -172,7 +165,7 @@ def fit_preprocess(train_df, max_features=6000, min_df=2):
 # TRANSFORM
 # ============================================================
 
-def transform_df(df, state):
+def transform_df(df, state, add_interactions=False):
     n = len(df)
 
     # ---------- NUMERIC ----------
@@ -205,15 +198,14 @@ def transform_df(df, state):
         likert_list.append(vals)
 
     X_likert = np.column_stack(likert_list)
-
-    # ---------- PRICE ----------
-    price = _extract_price(df[COL_PRICE])
-
-    for p, med in state["price_median"].items():
-        mask = (df[COL_TARGET] == p) & price.isna()
-        price[mask] = med
-
-    X_price = price.fillna(0).values.reshape(-1, 1)
+    # ---------- INTERACTIONS (OPTIONAL) ----------
+    # LIKERT_COLS = [SOMBRE, CONTENT, CALM, UNEASY]
+    if add_interactions:
+        content_x_calm = (X_likert[:, 1] * X_likert[:, 2]).reshape(-1, 1)
+        uneasy_x_sombre = (X_likert[:, 3] * X_likert[:, 0]).reshape(-1, 1)
+        X_interactions = np.hstack([content_x_calm, uneasy_x_sombre])
+    else:
+        X_interactions = None
 
     # ---------- MULTI-HOT ----------
     def multi_hot(series, cats):
@@ -241,7 +233,10 @@ def transform_df(df, state):
     X_text = state["_vectorizer"].transform(text).toarray()
 
     # ---------- COMBINE ----------
-    X = np.hstack([X_num, X_likert, X_price, X_room, X_who, X_season, X_text])
+    if X_interactions is None:
+        X = np.hstack([X_num, X_likert, X_room, X_who, X_season, X_text])
+    else:
+        X = np.hstack([X_num, X_likert, X_interactions, X_room, X_who, X_season, X_text])
 
     y = df[COL_TARGET].map(state["class_to_idx"]).values
 
