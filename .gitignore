@@ -9,3 +9,7 @@ model_state.json
 
 # Local matplotlib cache (optional; report_figures.py)
 .mplconfig/
+
+# Optional preprocessing cache (regeneratable)
+preprocess_state.json
+preprocess_state.npz

@@ -3,11 +3,10 @@ CSC311 MarkUs prediction script.
 
 Imports allowed: standard library, numpy, pandas only (no sklearn).
 
-Requires in the same directory:
-  model_state.json
-  model_weights.npz
+Requires **model_state.json** and **model_weights.npz** (generate with ``python export_model.py``).
+MarkUs: upload **pred.py + both files** in the same submission (combined ≤ 10MB).
 
-Generate them with:  python export_model.py
+They are searched next to ``pred.py``, then the process current working directory.
 (training uses sklearn; this file loads exported weights only.)
 """
 from __future__ import annotations
@@ -52,13 +51,38 @@ _REQUIRED_CLEAN = (
 )
 
 
+def _artifact_dir() -> str:
+    """Directory containing both model_state.json and model_weights.npz."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    for d in (script_dir, cwd):
+        j = os.path.join(d, "model_state.json")
+        z = os.path.join(d, "model_weights.npz")
+        if os.path.isfile(j) and os.path.isfile(z):
+            return d
+    raise FileNotFoundError(
+        "Missing model_state.json and/or model_weights.npz. "
+        "Upload them together with pred.py to MarkUs (same folder; total ≤ 10MB). "
+        f"Looked in: {script_dir!r} and {cwd!r}. "
+        "Regenerate with: python export_model.py"
+    )
+
+
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.dropna(subset=_REQUIRED_CLEAN).copy()
+    # Keep all input rows; unseen test data may contain missing fields.
+    d = df.copy()
+    for c in _REQUIRED_CLEAN:
+        if c not in d.columns:
+            d[c] = np.nan
     for c in _TEXT_COLS:
-        if c in d.columns:
+        if c not in d.columns:
+            d[c] = ""
+        else:
             d[c] = d[c].fillna("")
     for c in _MULTI_COLS:
-        if c in d.columns:
+        if c not in d.columns:
+            d[c] = ""
+        else:
             d[c] = d[c].fillna("")
     return d
 
@@ -412,7 +436,7 @@ def predict_all(csv_path: str) -> List[str]:
     """
     Load a CSV (same schema as training_data.csv), return predicted Painting labels.
     """
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = _artifact_dir()
     with open(os.path.join(root, "model_state.json"), encoding="utf-8") as f:
         bundle = json.load(f)
     raw = np.load(os.path.join(root, "model_weights.npz"))
@@ -421,6 +445,8 @@ def predict_all(csv_path: str) -> List[str]:
     classes: List[str] = bundle["classes"]
 
     df = pd.read_csv(csv_path)
+    # Preserve CSV row order; checker compares preds[i] to input row i.
+    df["_pred_row_"] = np.arange(len(df), dtype=np.int64)
     if _COL_TARGET not in df.columns:
         df[_COL_TARGET] = classes[0]
     df = _clean(df)
@@ -441,7 +467,9 @@ def predict_all(csv_path: str) -> List[str]:
     meta_x = np.hstack([p_lr, p_nb, p_rf])
     proba = _meta_predict_proba(meta_x, w)
     idx = np.argmax(proba, axis=1)
-    return [classes[j] for j in idx]
+    labels_sorted = [classes[j] for j in idx]
+    order = np.argsort(df["_pred_row_"].to_numpy(), kind="stable")
+    return [labels_sorted[i] for i in order]
 
 
 if __name__ == "__main__":

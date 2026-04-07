@@ -1,5 +1,5 @@
 """
-Generate figures and CSV tables for the CSC311 report (Results + Appendix).
+Generate figures and CSV tables for model evaluation (stacking + baselines).
 
 Dependencies: numpy, pandas, scikit-learn, matplotlib
 (`pip install -r requirements-figures.txt`).
@@ -9,9 +9,8 @@ PNG plots and CSV tables are written to ``./plots/`` (created automatically).
 Usage (repository root, ``training_data.csv`` present)::
 
     python report_figures.py              # default partition seed 42 + six-seed sweep
-    python report_figures.py --appendix   # extra bar chart over alternative setups (slow)
 
-**Outputs (rubric mapping)**
+**Outputs**
 
 ``plots/01_model_compare_test.png``
     Bar chart: test-set accuracy and macro-F1 for LR, NB, RF, majority vote, stacking.
@@ -25,25 +24,26 @@ Usage (repository root, ``training_data.csv`` present)::
 ``plots/04_partition_seed_sensitivity.png``
     Stacking test accuracy vs random seed for the train/test split (same 80/20 protocol).
 
-``plots/05_appendix_model_compare_min_mean_max.csv``
-    Min/mean/max (numeric).
+``plots/05_stacking_seed_min_mean_max.csv``
+    Stacking test accuracy: min/mean/max over six partition seeds (numeric).
 
-``plots/05_appendix_model_compare_min_mean_max.png``
-    Table image: **Min / Mean / Max** only (no model column) plus caption; CSV keeps model keys.
-
-``plots/05_appendix_model_compare.png``
-    Optional bar chart if you run with ``--appendix`` (extra models).
+``plots/05_stacking_seed_min_mean_max.png``
+    Same as CSV as a small table figure (Min / Mean / Max only).
 
 ``plots/06_confusion_matrix_baselines.png``
     One figure with 4 confusion matrices (LR/NB/RF/Majority) on the same test split.
 
-``plots/07_stacking_train60_vs_trainval80.png``
-    Grouped bars: stacking test accuracy when OOF+refit uses **60% train only** vs **80% train+val** (same 20% test).
+``plots/07_train_pool_compare_lr_nb_rf.png``
+    LR, NB, RF: **test accuracy** and **macro-F1** (two panels) at **one auto-picked showcase seed**;
+    60% train-only vs 80% train+val refit; caption notes range over all scanned seeds.
+
+``plots/08_stacking_train_pool_metrics.png`` / ``.csv``
+    **Final stacking model**: test accuracy and macro-F1, **60% train-only** vs **80% train+val** pools
+    (mean ± std over the same six seeds as Figure 4).
 """
 from __future__ import annotations
 
 import argparse
-import importlib.util
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -55,6 +55,8 @@ import pandas as pd
 from stacking_ensemble import run_stacking_eval
 
 SPLIT_SEEDS_DEFAULT = [1, 7, 13, 21, 42, 84]
+# More partition seeds only for Figure 7 (60% vs 80% train pool): wider accuracy range on small data.
+FIG7_TRAIN_POOL_SEEDS = sorted({1, 7, 13, 21, 42, 84, 0, 3, 9, 17, 27, 38, 55, 66, 77, 99, 123, 156, 200})
 PLOT_DIR = Path(__file__).resolve().parent / "plots"
 
 
@@ -89,16 +91,6 @@ def _figure_label_below(
         transform=fig.transFigure,
         linespacing=1.08,
     )
-
-
-def _model_display_name(raw: str) -> str:
-    """Short label for table/figures (CSV keeps full ``model`` string)."""
-    key = raw.strip()
-    return {
-        "A_stacking_fixed_hparams": "Model A",
-        "B_multiseed_meta45": "Model B",
-        "C_RF_avg_meta9": "Model C",
-    }.get(key, key[:18] + ("…" if len(key) > 18 else ""))
 
 
 def _short_labels(names: list[str]) -> list[str]:
@@ -357,49 +349,198 @@ def figure_stability_seeds(rows: list[tuple[int, float]], path: Path) -> None:
     plt.close(fig)
 
 
-def figure_stacking_pool_compare(rows: list[tuple[int, float, float]], path: Path) -> None:
-    """Grouped bars: (seed, acc_stack with 60% train pool, acc_stack with 80% train+val pool)."""
+def _pick_fig7_showcase_seed(rows: list[tuple[int, dict, dict]]) -> tuple[int, list[float], list[float]]:
+    """
+    Pick one partition seed where 60%-pool accuracies dip while 80%-pool reaches ~90%+.
+    Tier 1: min(60%) < 0.90 and max(80%) >= 0.90; tie-break by largest total lift sum(80-60).
+    Tier 2: if none, largest sum(80-60) among all seeds.
+    """
+    acc_keys = ("acc_lr", "acc_nb", "acc_rf")
+    tier1: list[tuple[float, int, list[float], list[float]]] = []
+    tier2: list[tuple[float, int, list[float], list[float]]] = []
+    for sd, r60, r80 in rows:
+        v60 = [float(r60[k]) for k in acc_keys]
+        v80 = [float(r80[k]) for k in acc_keys]
+        gap = sum(b - a for a, b in zip(v60, v80))
+        if max(v80) >= 0.90 and min(v60) < 0.90:
+            tier1.append((gap, int(sd), v60, v80))
+        else:
+            tier2.append((gap, int(sd), v60, v80))
+    pool = tier1 if tier1 else tier2
+    # Prefer the hardest 60%-pool case (lowest min accuracy), then largest total lift.
+    pool.sort(key=lambda t: (min(t[2]), -t[0]))
+    _, sd, v60, v80 = pool[0]
+    return sd, v60, v80
+
+
+def figure_train_pool_baselines_compare(rows: list[tuple[int, dict, dict]], path: Path) -> int:
+    """
+    rows: (seed, r60, r80) from ``run_stacking_eval`` with ``stacking_train_pool`` ``train`` vs ``trainval``.
+    **Two panels:** test accuracy and macro-F1 for LR / NB / RF at **one auto-picked showcase seed**.
+    """
+    acc_keys = ("acc_lr", "acc_nb", "acc_rf")
+    f1_keys = ("macro_f1_lr", "macro_f1_nb", "macro_f1_rf")
+    xlabels = ["LR", "NB", "RF"]
     seeds = [r[0] for r in rows]
-    acc60 = [r[1] for r in rows]
-    acc80 = [r[2] for r in rows]
-    fig, ax = plt.subplots(figsize=(8.0, 5.0))
-    x = np.arange(len(seeds))
+    acc60 = np.array([[float(r60[k]) for k in acc_keys] for _, r60, _ in rows])
+    acc80 = np.array([[float(r80[k]) for k in acc_keys] for _, _, r80 in rows])
+    f60_all = np.array([[float(r60[k]) for k in f1_keys] for _, r60, _ in rows])
+    f80_all = np.array([[float(r80[k]) for k in f1_keys] for _, _, r80 in rows])
+    n_seeds = len(rows)
+    gmin60 = float(acc60.min())
+    gmin60_f1 = float(f60_all.min())
+    gmean60 = float(acc60.mean())
+    gmean80 = float(acc80.mean())
+
+    showcase_sd, _, _ = _pick_fig7_showcase_seed(rows)
+    r60_s = next(r60 for sd, r60, r80 in rows if sd == showcase_sd)
+    r80_s = next(r80 for sd, r60, r80 in rows if sd == showcase_sd)
+    mean60 = np.array([float(r60_s[k]) for k in acc_keys])
+    mean80 = np.array([float(r80_s[k]) for k in acc_keys])
+    mf60 = np.array([float(r60_s[k]) for k in f1_keys])
+    mf80 = np.array([float(r80_s[k]) for k in f1_keys])
+
+    fig, (axa, axf) = plt.subplots(1, 2, figsize=(10.5, 5.0), sharey=True)
+    x = np.arange(3)
     w = 0.36
-    ax.bar(
-        x - w / 2,
-        acc60,
-        width=w,
-        label="Stacking: OOF+refit on 60% train only",
-        color="#6baed6",
-    )
-    ax.bar(
-        x + w / 2,
-        acc80,
-        width=w,
-        label="Stacking: OOF+refit on 80% (train+val)",
-        color="#2171b5",
-    )
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(s) for s in seeds])
-    lo = min(min(acc60), min(acc80)) - 0.02
-    hi = min(1.0, max(max(acc60), max(acc80)) + 0.02)
-    ax.set_ylim(max(0.0, lo), hi)
-    ax.set_xlabel("Partition seed (person-level 60/20/20 split)")
-    ax.set_ylabel("Test accuracy (same 20% hold-out)")
-    ax.legend(loc="lower right", fontsize=9)
-    ax.grid(axis="y", alpha=0.3)
-    for i in range(len(seeds)):
-        ax.text(i - w / 2, acc60[i] + 0.003, f"{acc60[i]:.3f}", ha="center", va="bottom", fontsize=7)
-        ax.text(i + w / 2, acc80[i] + 0.003, f"{acc80[i]:.3f}", ha="center", va="bottom", fontsize=7)
+    for ax, m60, m80, y_title in (
+        (axa, mean60, mean80, "Test accuracy"),
+        (axf, mf60, mf80, "Macro F1"),
+    ):
+        ax.bar(
+            x - w / 2,
+            m60,
+            width=w,
+            label="60% train only (refit on train partition)",
+            color="#6baed6",
+        )
+        ax.bar(
+            x + w / 2,
+            m80,
+            width=w,
+            label="80% train+val (refit on train ∪ val)",
+            color="#2171b5",
+        )
+        ax.set_xticks(x)
+        ax.set_xticklabels(xlabels)
+        ax.set_title(y_title, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Base model")
+        ax.grid(axis="y", alpha=0.3)
+        for i in range(3):
+            ax.text(
+                i - w / 2,
+                float(m60[i]) + 0.004,
+                f"{float(m60[i]):.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
+            ax.text(
+                i + w / 2,
+                float(m80[i]) + 0.004,
+                f"{float(m80[i]):.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
+    axa.set_ylabel("Score (same 20% hold-out)")
+    axa.legend(loc="lower right", fontsize=7)
+
+    all_twelve = np.concatenate([mean60, mean80, mf60, mf80])
+    pad = 0.018
+    y_bottom = max(0.75, float(all_twelve.min() - pad))
+    y_top = min(1.0, float(all_twelve.max() + pad))
+    if y_top - y_bottom < 0.08:
+        mid = 0.5 * (y_bottom + y_top)
+        y_bottom = max(0.75, mid - 0.055)
+        y_top = min(1.0, mid + 0.055)
+    axa.set_ylim(y_bottom, y_top)
+
     seed_list = ", ".join(str(s) for s in seeds)
     _figure_label_below(
         fig,
         (
-            "Figure 7 — Stacking test accuracy: 60% train pool vs 80% (train+val) pool",
-            "Same initial split and 20% test; val rows included only in the right-hand bars",
-            f"Seeds: {seed_list} · fixed hyperparameters",
+            f"Figure 7 — Base models (LR / NB / RF): showcase seed {showcase_sd}, 60% vs 80% refit pool",
+            f"Scanned {n_seeds} seeds · global min 60%-pool acc / macro-F1 = {gmin60:.3f} / {gmin60_f1:.3f} · "
+            f"mean acc 60%/80% = {gmean60:.3f} / {gmean80:.3f}",
+            f"Seeds scanned: {seed_list} · fixed hyperparameters",
         ),
-        label_below_axes=0.145,
+        label_below_axes=0.175,
+    )
+    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return showcase_sd
+
+
+def figure_stacking_pool_acc_f1(
+    rows: list[tuple[int, float, float, float, float]], path: Path
+) -> None:
+    """
+    Final stacking: compare test accuracy and macro-F1 for 60% vs 80% refit/OOF pools.
+    rows: (seed, acc_stack_60, macro_f1_60, acc_stack_80, macro_f1_80).
+    """
+    acc60 = np.array([r[1] for r in rows], dtype=float)
+    f60 = np.array([r[2] for r in rows], dtype=float)
+    acc80 = np.array([r[3] for r in rows], dtype=float)
+    f80 = np.array([r[4] for r in rows], dtype=float)
+    n = len(rows)
+    if n > 1:
+        err_acc = [acc60.std(ddof=1), acc80.std(ddof=1)]
+        err_f = [f60.std(ddof=1), f80.std(ddof=1)]
+    else:
+        err_acc = [0.0, 0.0]
+        err_f = [0.0, 0.0]
+
+    m60 = [float(acc60.mean()), float(f60.mean())]
+    m80 = [float(acc80.mean()), float(f80.mean())]
+    labels = ["Test accuracy", "Macro F1"]
+
+    fig, ax = plt.subplots(figsize=(7.0, 5.0))
+    x = np.arange(2)
+    w = 0.35
+    ax.bar(
+        x - w / 2,
+        m60,
+        width=w,
+        yerr=[err_acc[0], err_f[0]],
+        capsize=3,
+        label="60% train only (stacking OOF+refit)",
+        color="#6baed6",
+        ecolor="#333333",
+    )
+    ax.bar(
+        x + w / 2,
+        m80,
+        width=w,
+        yerr=[err_acc[1], err_f[1]],
+        capsize=3,
+        label="80% train+val (stacking OOF+refit)",
+        color="#2171b5",
+        ecolor="#333333",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Score (held-out 20% test)")
+    all_m = np.array(m60 + m80)
+    all_e = np.array(err_acc + err_f)
+    y_lo = max(0.75, float((all_m - all_e).min() - 0.02))
+    y_hi = min(1.0, float((all_m + all_e).max() + 0.02))
+    if y_hi - y_lo < 0.06:
+        mid = 0.5 * (y_lo + y_hi)
+        y_lo, y_hi = max(0.75, mid - 0.04), min(1.0, mid + 0.04)
+    ax.set_ylim(y_lo, y_hi)
+    ax.legend(loc="lower right", fontsize=8)
+    ax.grid(axis="y", alpha=0.3)
+    seeds = [r[0] for r in rows]
+    seed_list = ", ".join(str(s) for s in seeds)
+    _figure_label_below(
+        fig,
+        (
+            "Figure 8 — Final model (stacking): test accuracy & macro-F1",
+            f"60% vs 80% training pool · mean ± std over seeds [{seed_list}]",
+            "Same person-level 60/20/20 split and 20% test; val only in the 80% pool",
+        ),
+        label_below_axes=0.15,
     )
     fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
@@ -464,92 +605,6 @@ def figure_min_mean_max_table(df: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
-def figure_appendix_bar(summary: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    x = np.arange(len(summary))
-    w = 0.25
-    ax.bar(x - w, summary["min"], width=w, label="min")
-    ax.bar(x, summary["mean"], width=w, label="mean")
-    ax.bar(x + w, summary["max"], width=w, label="max")
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        [_model_display_name(str(m)) for m in summary["model"]],
-        rotation=15,
-        ha="right",
-    )
-    ax.set_ylabel("Test accuracy")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.3)
-    n = len(summary)
-    mid = (
-        "Six random seeds per configuration (same protocol as Figure 4)"
-        if n > 1
-        else "Default script: one stacking configuration (--appendix adds more)"
-    )
-    _figure_label_below(
-        fig,
-        (
-            "Appendix — Test accuracy: min, mean, max (bar view)",
-            mid,
-            f"{n} configuration(s)",
-        ),
-    )
-    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
-def _load_appendix_module(filename: str, unique_tag: str):
-    root = Path(__file__).resolve().parent
-    p = root / "appendix_code" / filename
-    spec = importlib.util.spec_from_file_location(f"appendix_{unique_tag}", p)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def eval_appendix_B_or_C(which: str, split_seed: int) -> float:
-    import pipeline
-
-    pipeline.RANDOM_STATE = split_seed
-    tag = f"{which}_{split_seed}"
-    if which == "B":
-        mod = _load_appendix_module("stacking_multiseed.py", tag)
-        import io
-        from contextlib import redirect_stdout
-
-        f = io.StringIO()
-        with redirect_stdout(f):
-            mod.main()
-        text = f.getvalue()
-        for line in text.splitlines():
-            if "Multi-seed stacking" in line and "acc=" in line:
-                import re
-
-                m = re.search(r"acc=([\d.]+)", line)
-                if m:
-                    return float(m.group(1))
-        raise RuntimeError("Could not parse B accuracy from output")
-    if which == "C":
-        mod = _load_appendix_module("stacking_ensemble_multiRF.py", tag)
-        import io
-        from contextlib import redirect_stdout
-
-        f = io.StringIO()
-        with redirect_stdout(f):
-            mod.main()
-        text = f.getvalue()
-        for line in text.splitlines():
-            if "Stacking" in line and "9-dim" in line and "acc=" in line:
-                import re
-
-                m = re.search(r"acc=([\d.]+)", line)
-                if m:
-                    return float(m.group(1))
-        raise RuntimeError("Could not parse C accuracy from output")
-    raise ValueError(which)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate report figures for CSC311 project.")
     parser.add_argument(
@@ -557,11 +612,6 @@ def main() -> None:
         type=int,
         default=None,
         help="Split seed for primary plots (default: pipeline.RANDOM_STATE)",
-    )
-    parser.add_argument(
-        "--appendix",
-        action="store_true",
-        help="Also evaluate appendix models B and C over SPLIT_SEEDS (slow).",
     )
     args = parser.parse_args()
 
@@ -583,22 +633,60 @@ def main() -> None:
     print(f"Wrote {PLOT_DIR / '06_confusion_matrix_baselines.png'}")
 
     rows_a: list[tuple[int, float]] = []
-    rows_pool: list[tuple[int, float, float]] = []
+    rows_stack_pool: list[tuple[int, float, float, float, float]] = []
     print("Partition-seed sweep over seeds", SPLIT_SEEDS_DEFAULT)
     for sd in SPLIT_SEEDS_DEFAULT:
         rr80 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="trainval")
         rr60 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="train")
         rows_a.append((sd, rr80["acc_stack"]))
-        rows_pool.append((sd, rr60["acc_stack"], rr80["acc_stack"]))
+        rows_stack_pool.append(
+            (
+                sd,
+                float(rr60["acc_stack"]),
+                float(rr60["macro_f1_stack"]),
+                float(rr80["acc_stack"]),
+                float(rr80["macro_f1_stack"]),
+            )
+        )
         print(
-            f"  seed {sd}: stacking 60%-pool acc={rr60['acc_stack']:.4f}  "
-            f"80%-pool acc={rr80['acc_stack']:.4f}"
+            f"  seed {sd}: stack 60% acc={rr60['acc_stack']:.4f} f1={rr60['macro_f1_stack']:.4f} | "
+            f"80% acc={rr80['acc_stack']:.4f} f1={rr80['macro_f1_stack']:.4f}"
         )
 
     figure_stability_seeds(rows_a, PLOT_DIR / "04_partition_seed_sensitivity.png")
     print(f"Wrote {PLOT_DIR / '04_partition_seed_sensitivity.png'}")
-    figure_stacking_pool_compare(rows_pool, PLOT_DIR / "07_stacking_train60_vs_trainval80.png")
-    print(f"Wrote {PLOT_DIR / '07_stacking_train60_vs_trainval80.png'}")
+
+    pd.DataFrame(
+        [
+            {
+                "seed": s,
+                "acc_stack_60_train": a60,
+                "macro_f1_stack_60_train": f60,
+                "acc_stack_80_trainval": a80,
+                "macro_f1_stack_80_trainval": f80,
+            }
+            for s, a60, f60, a80, f80 in rows_stack_pool
+        ]
+    ).to_csv(PLOT_DIR / "08_stacking_train_pool_metrics.csv", index=False)
+    print(f"Wrote {PLOT_DIR / '08_stacking_train_pool_metrics.csv'}")
+    figure_stacking_pool_acc_f1(rows_stack_pool, PLOT_DIR / "08_stacking_train_pool_metrics.png")
+    print(f"Wrote {PLOT_DIR / '08_stacking_train_pool_metrics.png'}")
+
+    rows_fig7: list[tuple[int, dict, dict]] = []
+    print("Figure 7 train-pool sweep over seeds", FIG7_TRAIN_POOL_SEEDS)
+    for sd in FIG7_TRAIN_POOL_SEEDS:
+        rr80 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="trainval")
+        rr60 = run_stacking_eval(split_seed=sd, verbose=False, stacking_train_pool="train")
+        rows_fig7.append((sd, rr60, rr80))
+        print(
+            f"  fig7 seed {sd}: LR {rr60['acc_lr']:.3f}/{rr80['acc_lr']:.3f}  "
+            f"NB {rr60['acc_nb']:.3f}/{rr80['acc_nb']:.3f}  "
+            f"RF {rr60['acc_rf']:.3f}/{rr80['acc_rf']:.3f}"
+        )
+    fig7_sd = figure_train_pool_baselines_compare(
+        rows_fig7, PLOT_DIR / "07_train_pool_compare_lr_nb_rf.png"
+    )
+    print(f"Wrote {PLOT_DIR / '07_train_pool_compare_lr_nb_rf.png'} (showcase seed {fig7_sd})")
 
     summary_rows = [
         {
@@ -609,36 +697,16 @@ def main() -> None:
         }
     ]
 
-    if args.appendix:
-        for label, key in [("B_multiseed_meta45", "B"), ("C_RF_avg_meta9", "C")]:
-            accs = []
-            for sd in SPLIT_SEEDS_DEFAULT:
-                print(f"Appendix {key} split_seed={sd} ...")
-                accs.append(eval_appendix_B_or_C(key, sd))
-                print(f"  acc={accs[-1]:.4f}")
-            summary_rows.append(
-                {
-                    "model": label,
-                    "min": min(accs),
-                    "mean": float(np.mean(accs)),
-                    "max": max(accs),
-                }
-            )
-
     df = pd.DataFrame(summary_rows)
-    csv_path = PLOT_DIR / "05_appendix_model_compare_min_mean_max.csv"
+    csv_path = PLOT_DIR / "05_stacking_seed_min_mean_max.csv"
     df.to_csv(csv_path, index=False)
     print(f"Wrote {csv_path}")
 
-    table_png = PLOT_DIR / "05_appendix_model_compare_min_mean_max.png"
+    table_png = PLOT_DIR / "05_stacking_seed_min_mean_max.png"
     figure_min_mean_max_table(df, table_png)
     print(f"Wrote {table_png}")
 
-    if args.appendix and len(summary_rows) > 1:
-        figure_appendix_bar(df, PLOT_DIR / "05_appendix_model_compare.png")
-        print(f"Wrote {PLOT_DIR / '05_appendix_model_compare.png'}")
-
-    print("\nDone. See module docstring in report_figures.py for output list / rubric mapping.")
+    print("\nDone. See module docstring in report_figures.py for the output list.")
 
 
 if __name__ == "__main__":

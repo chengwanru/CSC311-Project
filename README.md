@@ -1,125 +1,109 @@
-# CSC311 Project — `final` branch
+# Painting prediction — stacking ensemble
 
-This branch matches the **course submission layout** (Winter 2026 CSC311 project instructions): MarkUs **prediction** (`pred.py` + small artifacts), **report** (`report.pdf` + `code.zip` evidence).
-
-## Repository layout (by folder)
-
-| Location | What it is |
-| -------- | ---------- |
-| **`submission/`** | **Everything you upload to MarkUs**, in one place: prediction trio, contents for `code.zip`, and a slot for `report.pdf`. Sync from root with `python submission/sync_submission.py` (after `export_model.py`). See **`submission/README.md`**. |
-| **`appendix_code/`** | Appendix-only code (other models / experiments). Not imported by `pred.py`; include in **`code.zip`** if the report references it. |
-| **`plots/`** | Report figures and CSVs from `report_figures.py`, plus **`plots/README.md`** as a short index. |
-| **`.mplconfig/`** | Local matplotlib cache/config from plotting; not part of the hand-in. |
-| **Repo root** | Main `.py` modules, `training_data.csv`, `requirements-figures.txt`, `LICENSE`, `.gitignore`. **`export_model.py`** writes **`model_state.json`** and **`model_weights.npz`** here (and `sync` copies them into `submission/`). Any other loose `*.npz` / `*.json` at root are usually old or optional leftovers, not required for MarkUs unless you actively use them. |
-
-## Final model choice (**model A**)
-
-The **submitted** classifier is **stacking model A**: fixed hyperparameters, three base models (LR, NB/CNB blend, RF), **9-dimensional** OOF meta-features, meta logistic regression **C = 0.5** — implemented in `stacking_ensemble.py` (evaluation) and `export_model.py` (full-data train for `pred.py`).
-
-**Appendix-only code (models B & C)** lives in `appendix_code/` (see `appendix_code/README.md`). Include that folder in **code.zip** for the report; it is **not** loaded by `pred.py`.
-
-## Our approach
-
-We use **stacking**: three base classifiers each output class probabilities; a **meta-model** (multinomial logistic regression) learns how to combine those probabilities. Final prediction is the meta-model’s argmax over three painting classes.
-
-**Base models**
-
-1. **Logistic regression** on a dense feature vector: numeric / Likert / price (scaled), multi-hot room–companion–season, and **TF–IDF** over description + food + soundtrack text (`pipeline.fit_state` / `transform_df`). Vocabulary is fit on the training portion only to avoid leakage.
-2. **Custom Naive Bayes**: multinomial block + Gaussian block on continuous numeric features, with a **CNB** branch; we blend log-probabilities (here effectively **NB-only**, blend weight 1.0). Features come from `naive_bayes.build_features` (different tokenisation than LR’s TF–IDF).
-3. **Random forest** on the **same** dense matrix as the LR (not the NB matrix).
-
-**How stacking is trained**
-
-- Data: `training_data.csv` after `pipeline.clean()`, rows aligned by `(unique_id, Painting)`.
-- **Person-level split**: 60% train / 20% val / 20% test (`regular_split`). LR preprocessing state is fit on **train only**; val and test are transformed with that state.
-- **Meta-training data**: on the **train+val pool (80%)**, we run **5-fold, person-level OOF**: each fold trains the three bases on four folds and records **probabilities** on the fifth. Those nine values per row (3 models × 3 classes) are the meta-features.
-- **Meta-classifier**: logistic regression on those OOF features (**C = 0.5**). Then we **refit** all three bases on the full 80% and evaluate on the 20% test set by stacking their test probabilities through the trained meta-model.
-
-**Fixed hyperparameters** (chosen from multiseed checks; see `stacking_ensemble.py`): LR `C = 100`, NB `α = 0.9`, NB/CNB blend `1.0`, RF `n_estimators = 200`, `max_depth = None`, `min_samples_leaf = 1`, meta `C = 0.5`.
-
-**Submission model** (`export_model.py`): same recipe, but **no held-out test** — OOF on **all** cleaned rows, then refit bases on **all** rows, and export weights for `pred.py`.
+**Multiclass classification** on survey data: predict which of three famous paintings a participant preferred (*The Starry Night*, *The Water Lily Pond*, *The Persistence of Memory*).  
+Course project for **CSC311 — Introduction to Machine Learning**, University of Toronto, Winter 2026.
 
 ---
 
-## What each file is for
+## Overview
 
-
-| File                   | Role                                                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `stacking_ensemble.py` | Local **evaluation** for **model A**: 60/20/20 split, OOF stacking on 80%, metrics on 20% test. Exposes `run_stacking_eval()` for scripts. Uses **sklearn**.               |
-| `export_model.py`      | **Train on full** `training_data.csv` and write `model_state.json` + `model_weights.npz` for MarkUs prediction. Uses **sklearn**.                                        |
-| `pred.py`              | **MarkUs prediction entry**: `predict_all(csv_path)` → list of painting name strings. **Only** stdlib, **numpy**, **pandas** — loads the two artifact files, no sklearn. |
-| `report_figures.py`    | Optional: builds **`plots/`** and CSV tables for the report (`pip install -r requirements-figures.txt`).                                                                |
-| `appendix_code/`       | **Models B & C** + `stacking_experiments.py` (multiseed meta-C sweep). Not used by `pred.py`; zip for report evidence.                                                    |
-| `pipeline.py`          | Cleaning, person-level splits, TF–IDF vocab/IDF, `fit_state` / `transform_df` for LR/RF features.                                                                        |
-| `naive_bayes.py`       | NB/CNB feature matrix, training helpers, and the same NB logic the export script uses.                                                                                   |
-| `data_exploration.py`  | Exploratory analysis script; include in **code.zip** if you use it as report evidence.                                                                                   |
-| `training_data.csv`    | Course training data (keep in repo / push as your team agrees).                                                                                                          |
-| `LICENSE`              | License for the repo.                                                                                                                                                    |
-| `.gitignore`           | Ignores caches, venv, and generated `model_state.json` / `model_weights.npz` (regenerate before submit).                                                                 |
-
+- **Stacking ensemble** — logistic regression, **custom Naive Bayes** (multinomial + Gaussian + Complement NB branch), and random forest; **meta-learner** is multinomial logistic regression on **9** out-of-fold probability features (3 models × 3 classes).
+- **Leakage-aware NLP** — TF–IDF vocabulary and scaling statistics are fit **only on the training split**; splits are **person-level** (same respondent stays in one fold).
+- **Two-stage workflow** — sklearn for training/export; **`pred.py` inference uses only the Python standard library, NumPy, and Pandas** (weights loaded from exported JSON + NPZ).
+- **Figures & tables** — `report_figures.py` regenerates evaluation plots and CSV summaries under `plots/`.
 
 ---
 
-## What to submit (per course instructions)
+## Tech stack
 
-Hand-in copies are staged under **`submission/`** (see **`submission/README.md`**). From repo root:
+| Area | Details |
+|------|---------|
+| Language | Python **3.10+** |
+| Training / eval | NumPy, Pandas, **scikit-learn** |
+| Inference | stdlib + NumPy + Pandas (no sklearn at predict time) |
+| Figures | Matplotlib (+ scikit-learn for evaluations inside the script) |
 
-```bash
-python export_model.py
-python submission/sync_submission.py
+---
+
+## Repository layout
+
+```
+├── pipeline.py           # Cleaning, person-level splits, TF–IDF, LR/RF features
+├── naive_bayes.py        # NB/CNB feature construction and training helpers
+├── stacking_ensemble.py    # 60/20/20 eval, 5-fold OOF stacking, test metrics
+├── export_model.py       # Full-data train → model_state.json + model_weights.npz
+├── pred.py               # predict_all(csv_path) — batch inference from CSV
+├── report_figures.py     # Regenerates plots/ (see requirements-figures.txt)
+├── training_data.csv     # Labeled survey responses (~1.8k rows), course-provided
+├── plots/                # Pre-generated figures + CSV summaries
+├── requirements.txt      # Core ML dependencies
+└── requirements-figures.txt
 ```
 
-Then upload from **`submission/01_prediction_markus/`**, zip **`submission/02_report_code_zip/`** → `code.zip`, and place **`report.pdf`** in **`submission/03_report_pdf/`** before uploading.
+---
 
-**Prediction assignment (MarkUs)**
+## Data
 
-- **`pred.py`** — Python **3.10+**; imports restricted to **stdlib, numpy, pandas** only; must define **`predict_all(csv_path)`** returning predictions; **no networking**; should run ~60 predictions within **~1 minute** with reasonable memory.
-- **`model_state.json`** and **`model_weights.npz`** — generate with `python export_model.py`; combined size **≤ 10 MB**.
-
-**Report assignment (MarkUs)**
-
-- **`report.pdf`**
-- **`code.zip`** — all `**.py`** / `**.ipynb**` used to develop the final model. **Exclude** any `/data` folder per instructions. The zip is **evidence only** (need not be runnable on the TA machine); include **`appendix_code/`** if you discuss models B/C in the appendix.
-
-Suggested **code.zip** contents: `pred.py`, `export_model.py`, `stacking_ensemble.py`, `pipeline.py`, `naive_bayes.py`, `data_exploration.py`, `report_figures.py`, `appendix_code/` (entire folder), `requirements-figures.txt`.
+**`training_data.csv`** is the course-provided labeled dataset (included in the repo). Each row links a participant’s ratings, free-text answers, and Likert-style fields to one of the three painting labels. Feature names and cleaning rules are implemented in `pipeline.py` and `pred.py`.
 
 ---
 
-## Report figures (Results / Appendix)
-
-Install optional dependency: `pip install -r requirements-figures.txt`
+## Setup
 
 ```bash
-# Default partition seed 42 + six-seed sensitivity (same as Fig. 4 protocol)
-python report_figures.py
-
-# Also evaluate appendix B & C over the same seeds (slow)
-python report_figures.py --appendix
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Outputs go to **`plots/`** — see **`plots/README.md`** and the **module docstring** in `report_figures.py`. Each PNG uses a short **multi-line title** (no long footnote caption, so aspect ratio stays natural).
+Optional — only if you want to rebuild figures:
+
+```bash
+pip install -r requirements-figures.txt
+```
 
 ---
 
-## Quick commands
+## Usage
+
+### Evaluate stacking (held-out 20% test, person-level split)
 
 ```bash
-# Evaluate stacking with a held-out 20% test set
 python stacking_ensemble.py
-
-# Build artifacts for pred.py (full-data training)
-python export_model.py
-
-# Smoke test (expects artifacts next to pred.py)
-python pred.py training_data.csv
 ```
+
+Uses fixed hyperparameters (see `stacking_ensemble.py`): e.g. LR `C=100`, NB `α=0.9`, RF `200` trees, meta logistic `C=0.5`. Quick multiseed checks in the module docstring report **~0.92–0.94** test accuracy depending on partition seed.
+
+### Export weights for inference
+
+```bash
+python export_model.py
+```
+
+Writes **`model_state.json`** and **`model_weights.npz`** next to `pred.py` (gitignored by default — regenerate after clone).
+
+### Run inference
+
+```bash
+python pred.py path/to/input.csv
+```
+
+`pred.py` defines **`predict_all(csv_path)`** → `list[str]` of painting names. Input columns should match the training schema (missing columns are handled conservatively for test-style CSVs).
+
+### Regenerate report figures
+
+```bash
+python report_figures.py
+```
+
+Outputs are described in **`plots/README.md`** (model comparison bars, confusion matrices, partition-seed stability, train-pool ablations).
 
 ---
 
-## Branch note
+## Method (short)
 
-- **`cheng2`** — Original development code (full history / experiments).
-- **`final`** — Submission-ready version: cleaned layout, final stacking setup, `pred.py` + export pipeline, and this README.
-
-Use `git checkout final` when preparing MarkUs files; use `cheng2` if you need the older tree.
+1. **Preprocess** — `pipeline.clean()` and align rows by `(unique_id, Painting)`.
+2. **Split** — **60% train / 20% validation / 20% test** by person; LR preprocessing state fit on **train only**.
+3. **Base models** — LR and RF share the same dense design matrix; NB uses its own discrete/continuous feature blocks.
+4. **Meta-training** — On the **80% train+val pool**, **5-fold person-level OOF** produces class probabilities from each base model; **9** stacked probabilities per row feed a **multinomial logistic regression** meta-classifier.
+5. **Evaluation** — Refit bases on full 80%, stack on the 20% test set. **Export** retrains on **all** cleaned rows and saves weights for `pred.py`.
