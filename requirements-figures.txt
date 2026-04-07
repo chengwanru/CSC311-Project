@@ -1,0 +1,2 @@
+# Optional: only needed to run report_figures.py
+matplotlib>=3.7
